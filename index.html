@@ -13,12 +13,23 @@
 
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { border: none; cursor: pointer; border-radius: 5px; font-size: 11px; font-weight: 600; padding: 6px 12px; transition: all .2s; display: inline-flex; align-items: center; gap: 5px; }
+  .btn-crawl { background: #c0392b; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+  .btn-crawl:hover { background: #a82919; }
+  .btn-crawl:disabled { background: #7f8c8d; cursor: default; }
+  .btn-stop { background: #f1c40f; color: #333; display: none; }
+  .btn-stop:hover { background: #d4ac0d; }
   .btn-export { background: #f39c12; color: white; }
   .btn-export:hover { background: #d68910; }
   .btn-collapse { background: rgba(255,255,255,.2); color: white; }
   .btn-collapse:hover { background: rgba(255,255,255,.3); }
 
+  #progress-bar { height: 4px; background: #1F3864; }
+  #progress-fill { height: 100%; background: linear-gradient(90deg, #27ae60, #2ecc71); width: 0; transition: width .3s; }
+
   #status-bar { background: #2c3e50; color: #ecf0f1; font-size: 11px; padding: 6px 18px; display: flex; justify-content: space-between; align-items: center; }
+  #stats { display: flex; gap: 14px; }
+  #stats span { color: #ecf0f1; }
+  #stats b { color: #2ecc71; }
   
   #filters { padding: 10px 18px; background: white; border-bottom: 1px solid #dde3ec; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .filter-chip { background: #eaf1fb; border: 1px solid #2E75B6; border-radius: 12px; padding: 4px 12px; font-size: 11px; cursor: pointer; color: #2E75B6; font-weight: 600; transition: all 0.2s; }
@@ -28,7 +39,7 @@
   #search-box { border: 1px solid #c5d5e8; border-radius: 5px; padding: 5px 12px; font-size: 12px; width: 250px; outline: none; }
   #search-box:focus { border-color: #2E75B6; box-shadow: 0 0 0 2px rgba(46, 117, 182, 0.2); }
 
-  #table-wrap { overflow: auto; max-height: calc(100vh - 145px); }
+  #table-wrap { overflow: auto; max-height: calc(100vh - 175px); }
 
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #2E75B6; color: white; padding: 10px; font-size: 11px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-align: left; white-space: nowrap; }
@@ -39,6 +50,7 @@
   thead th:nth-child(5) { width: 60px; text-align: center; }
 
   tr.row-data:hover td { filter: brightness(.96); background-color: #fafbfc; }
+  tr.row-data.processing td { background: #fff7e0 !important; transition: background 0.5s; }
   td { padding: 6px 10px; border-bottom: 1px solid #e8edf3; vertical-align: middle; white-space: nowrap; }
 
   .toggle-btn { background: none; border: 1px solid #aab; border-radius: 3px; width: 16px; height: 16px; cursor: pointer; font-size: 10px; color: #555; line-height: 14px; text-align: center; flex-shrink: 0; }
@@ -58,6 +70,7 @@
   .titular-cell { color: #2c3e50; }
   .titular-cell.from-crawl { color: #1a7a3c; font-weight: 500; }
   .titular-cell.from-crawl::before { content: "✓ "; color: #27ae60; font-weight: bold; }
+  .titular-cell.loaded { color: #1a7a3c; font-weight: 500; }
 
   .l0 td { background: #1F3864 !important; color: white !important; font-weight: 700; font-size: 13px; }
   .l0 td a { color: #a8d1ff !important; }
@@ -68,6 +81,12 @@
   .l3 td { background: #8FAADC; color: #1a2332; }
   .l4 td { background: #BDD7EE; color: #1a2332; }
   .l5 td { background: #DEEAF1; color: #2c3e50; }
+
+  #crawl-log { display: none; background: #1a2332; color: #a8e6cf; font-family: 'Courier New', monospace; font-size: 10px; padding: 6px 18px; max-height: 100px; overflow-y: auto; line-height: 1.4; white-space: pre-wrap; border-top: 1px solid #34495e;}
+  #crawl-log.show { display: block; }
+  #crawl-log .err { color: #ff6b6b; }
+  #crawl-log .ok { color: #2ecc71; }
+  #crawl-log .info { color: #74b9ff; }
 </style>
 </head>
 <body onload="cargarDatosAutomaticos()">
@@ -80,16 +99,26 @@
   <div class="toolbar">
     <button class="btn btn-collapse" onclick="collapseAll()">⊟ Colapsar todo</button>
     <button class="btn btn-collapse" onclick="expandAll()">⊞ Expandir todo</button>
+    
+    <button class="btn btn-crawl" id="btn-crawl" onclick="lanzarCrawler()" disabled>🔍 Buscar URLs Pendientes</button>
+    <button class="btn btn-stop" id="btn-stop" onclick="abortCrawl()">⏹ Parar</button>
+    <button class="btn btn-collapse" onclick="document.getElementById('crawl-log').classList.toggle('show')">📋 Log</button>
+    
     <button class="btn btn-export" onclick="exportExcel()">📥 Exportar Excel</button>
   </div>
 </div>
 
+<div id="progress-bar"><div id="progress-fill"></div></div>
 <div id="status-bar">
   <span id="status-text">⏳ Conectando a la base de datos...</span>
-  <span>
-    🟢 URL verificada · 🟠 Estimada · 🔴 No encontrada · ✓ Titular actualizado
+  <span id="stats">
+    <span>Total: <b id="stat-total">0</b></span>
+    <span>URLs OK: <b id="stat-urls">0</b></span>
+    <span>Titulares: <b id="stat-titulares">0</b></span>
+    <span>ETA: <b id="stat-eta">—</b></span>
   </span>
 </div>
+<div id="crawl-log"></div>
 
 <div id="filters">
   <input id="search-box" type="text" placeholder="🔍 Buscar unidad o titular..." oninput="filterRows()">
@@ -121,10 +150,23 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+// =============================================================
+// CONSTANTES Y ESTADO
+// =============================================================
 const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
 let DATA = []; 
 const state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
 const rows = [];
+let crawlAbort = false;
+
+const STOPWORDS = new Set(['de','del','la','las','el','los','en','con','a','al','para','por','y','e','o','u']);
+const cache = { pageHtml: new Map(), notFound: new Set() };
+
+const PROXIES = [
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
 
 // ==========================================
 // 1. CARGAR DATOS DESDE EL JSON (GITHUB)
@@ -132,78 +174,315 @@ const rows = [];
 async function cargarDatosAutomaticos() {
   const statusEl = document.getElementById('status-text');
   try {
-    // Busca el data.json que debe estar subido en la misma carpeta de GitHub
     const response = await fetch('data.json');
     if (!response.ok) throw new Error('Archivo no encontrado');
     
     DATA = await response.json();
     init();
     
-    const verificadas = DATA.filter(d => d[5] === 'verified').length;
-    statusEl.innerHTML = `✅ Base de datos conectada · <b>${DATA.length}</b> unidades totales (${verificadas} URLs verificadas).`;
+    const verificadas = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+    statusEl.innerHTML = `✅ Base de datos conectada. Listos para consultar o buscar pendientes.`;
+    
+    // Activamos el botón del crawler
+    document.getElementById('btn-crawl').disabled = false;
+
   } catch (err) {
-    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'. Asegúrate de subirlo a GitHub junto a este HTML.`;
+    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'.`;
   }
 }
 
 // ==========================================
-// 2. FUNCIONES DE NORMALIZACIÓN
+// HELPERS DE NORMALIZACIÓN PARA CRAWLER
 // ==========================================
 function normalizarTexto(texto) {
     if (!texto) return "";
     return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
 }
 
+function tokensSinStopwords(text) {
+  return normalizarTexto(text).split(/\s+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
+}
+
+function nombresCoinciden(a, b) {
+  const na = normalizarTexto(a);
+  const nb = normalizarTexto(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) && nb.length > na.length * 0.6) return true;
+  if (nb.includes(na) && na.length > nb.length * 0.6) return true;
+  
+  const ta = new Set(tokensSinStopwords(a));
+  const tb = new Set(tokensSinStopwords(b));
+  if (ta.size === 0 || tb.size === 0) return false;
+  let ov = 0;
+  for (const x of ta) if (tb.has(x)) ov++;
+  const minSize = Math.min(ta.size, tb.size);
+  return (ov / minSize) >= 0.75;
+}
+
+function logCrawl(msg, type = '') {
+  const log = document.getElementById('crawl-log');
+  const time = new Date().toLocaleTimeString('es-ES');
+  const cls = type ? ` class="${type}"` : '';
+  log.innerHTML += `<span${cls}>[${time}] ${msg}</span>\n`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function generarCandidatos(slug, nombre) {
+  const set = new Set();
+  if (slug) set.add(slug);
+  if (slug) { for (let n = 0; n < 6; n++) set.add(slug + '-' + n); }
+  if (slug && slug.length > 30) {
+    const parts = slug.split('-');
+    for (let cut = 1; cut <= 3 && parts.length - cut > 3; cut++) {
+      const shorter = parts.slice(0, parts.length - cut).join('-');
+      set.add(shorter);
+      for (let n = 0; n < 4; n++) set.add(shorter + '-' + n);
+    }
+  }
+  return [...set];
+}
+
+async function fetchViaProxy(url, timeoutMs = 12000) {
+  if (cache.pageHtml.has(url)) return cache.pageHtml.get(url);
+  if (cache.notFound.has(url)) return null;
+
+  for (const buildProxyUrl of PROXIES) {
+    if (crawlAbort) return null;
+    try {
+      const proxyUrl = buildProxyUrl(url);
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (resp.ok) {
+        const html = await resp.text();
+        if (html && html.length > 1500) {
+          if (/Página no encontrada|Page not found|404 Not Found/i.test(html.substring(0, 5000))) {
+            cache.notFound.add(url);
+            return null;
+          }
+          cache.pageHtml.set(url, html);
+          return html;
+        }
+      } else if (resp.status === 404) {
+        cache.notFound.add(url);
+        return null;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+function extraerInfoDePagina(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const h1s = [...doc.querySelectorAll('h1')];
+  let ownName = "";
+  for (let i = h1s.length - 1; i >= 0; i--) {
+    const t = h1s[i].textContent.trim();
+    if (t && !t.toLowerCase().includes('portal de transparencia')) {
+      ownName = t;
+      break;
+    }
+  }
+  let titular = "";
+  const personaLink = doc.querySelector('a[href*="/transparencia/persona/"]');
+  if (personaLink) titular = personaLink.textContent.trim().replace(/^[\s"']+|[\s"']+$/g, '');
+  return { ownName, titular };
+}
+
 // ==========================================
-// 3. RENDER DE LA TABLA
+// CRAWLER (LÓGICA PRINCIPAL)
 // ==========================================
+async function lanzarCrawler() {
+  crawlAbort = false;
+  const btnC = document.getElementById('btn-crawl');
+  const btnS = document.getElementById('btn-stop');
+  const fill = document.getElementById('progress-fill');
+  const statusEl = document.getElementById('status-text');
+  const etaEl = document.getElementById('stat-eta');
+
+  document.getElementById('crawl-log').classList.add('show');
+  btnC.disabled = true;
+  btnS.style.display = 'inline-flex';
+  btnC.textContent = '⏳ Buscando...';
+
+  // Buscar solo los que NO están verificados (estatus distinto a 'verified' o '✓ Verificada')
+  const pendingIdx = [];
+  for (let i = 0; i < DATA.length; i++) {
+    const st = DATA[i][5];
+    if (st !== 'verified' && st !== '✓ Verificada' && DATA[i][4] !== 'presidenta') {
+        pendingIdx.push(i);
+    }
+  }
+  logCrawl(`=== Crawler web iniciado · ${pendingIdx.length} unidades sin URL oficial confirmada ===`, 'info');
+
+  const t0 = Date.now();
+  let processed = 0;
+  let newlyVerified = 0;
+  let totalVerificadas = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+  let totalTitulares = DATA.filter(d => d[3] && d[3] !== '').length;
+
+  const BATCH_SIZE = 4; // Lote conservador para no saturar proxies
+
+  for (let batchStart = 0; batchStart < pendingIdx.length && !crawlAbort; batchStart += BATCH_SIZE) {
+    const batchIndices = pendingIdx.slice(batchStart, batchStart + BATCH_SIZE);
+
+    batchIndices.forEach(idx => {
+      const tr = document.getElementById('r' + idx);
+      if (tr) tr.classList.add('processing');
+    });
+
+    await Promise.all(batchIndices.map(async (idx) => {
+      if (crawlAbort) return;
+      const item = DATA[idx];
+      const [level, tipo, name, titular, slug] = item;
+
+      const candidates = generarCandidatos(slug, name);
+      let found = false;
+
+      for (const candSlug of candidates) {
+        if (crawlAbort) return;
+        const url = BASE + candSlug;
+        const html = await fetchViaProxy(url);
+        if (!html) continue;
+
+        const info = extraerInfoDePagina(html);
+        if (info.ownName && nombresCoinciden(info.ownName, name)) {
+          // Actualizamos DATA
+          item[4] = candSlug;
+          item[5] = 'verified';
+          totalVerificadas++;
+          newlyVerified++;
+          if (info.titular && (!item[3] || item[3] === '')) {
+            item[3] = info.titular;
+            item[6] = 'crawl'; 
+            totalTitulares++;
+          }
+          found = true;
+          logCrawl(`OK: [${name}] -> /${candSlug}`, 'ok');
+          break;
+        }
+      }
+
+      if (!found && !crawlAbort) {
+        item[5] = 'failed';
+        logCrawl(`Fallo: No se encontró la URL para [${name}]`, 'err');
+      }
+    }));
+
+    batchIndices.forEach(idx => {
+      const tr = document.getElementById('r' + idx);
+      if (tr) tr.classList.remove('processing');
+      actualizarFila(idx);
+    });
+
+    processed += batchIndices.length;
+
+    const elapsed = (Date.now() - t0) / 1000;
+    const rate = processed / elapsed;
+    const eta = (pendingIdx.length - processed) / Math.max(rate, 0.1);
+
+    fill.style.width = ((processed / pendingIdx.length) * 100) + '%';
+    statusEl.textContent = `Buscando: ${processed}/${pendingIdx.length} · ${newlyVerified} encontradas en esta sesión`;
+    document.getElementById('stat-urls').textContent = totalVerificadas;
+    document.getElementById('stat-titulares').textContent = totalTitulares;
+    etaEl.textContent = formatearETA(eta);
+  }
+
+  fill.style.width = '100%';
+  if (crawlAbort) {
+    logCrawl(`Crawl detenido. Nuevas encontradas: ${newlyVerified}`, 'err');
+    statusEl.textContent = `⚠ Búsqueda detenida.`;
+  } else {
+    logCrawl(`=== Fin de búsqueda: Se recuperaron ${newlyVerified} URLs perdidas ===`, 'ok');
+    statusEl.textContent = `✅ Búsqueda completada.`;
+  }
+  
+  etaEl.textContent = '—';
+  btnC.disabled = false;
+  btnS.style.display = 'none';
+  btnC.textContent = '🔍 Re-intentar pendientes';
+}
+
+function abortCrawl() { crawlAbort = true; logCrawl('Parando...', 'info'); }
+
+function formatearETA(seg) {
+  if (!isFinite(seg) || seg < 0) return '—';
+  if (seg < 60) return Math.round(seg) + 's';
+  if (seg < 3600) return Math.floor(seg / 60) + 'm ' + Math.round(seg % 60) + 's';
+  return Math.floor(seg / 3600) + 'h ' + Math.floor((seg % 3600) / 60) + 'm';
+}
+
+// ==========================================
+// RENDER Y ACTUALIZACIÓN VISUAL
+// ==========================================
+const COLORS = {0:'#1F3864',1:'#2E75B6',2:'#4472C4',3:'#8FAADC',4:'#BDD7EE',5:'#DEEAF1'};
+
 function init() {
   const tbody = document.getElementById('tbody');
-  const COLORS = {0:'#1F3864',1:'#2E75B6',2:'#4472C4',3:'#8FAADC',4:'#BDD7EE',5:'#DEEAF1'};
-  
   tbody.innerHTML = '';
   rows.length = 0;
 
   DATA.forEach((item, i) => {
-    // Formato del JSON: [Nivel, Tipo, Nombre, Titular, Slug, EstadoURL, Origen]
-    const [level, tipo, name, titular, slug, urlStatus, titularSource] = item;
-    const url = slug ? (BASE + slug) : '#';
-    const lvl = level > 5 ? 5 : level;
-    
-    const tr = document.createElement('tr');
-    tr.className = `row-data l${lvl}`;
-    tr.id = 'r' + i;
-    
-    const nextItem = DATA[i+1];
-    const hasKids = nextItem && nextItem[0] > level;
-    if (state.expanded[i] === undefined) state.expanded[i] = level < 2;
-
-    const indent = level * 16;
-    
-    let statusCls = 'unknown', statusTitle = 'Sin URL';
-    if (urlStatus === 'verified') { statusCls = 'verified'; statusTitle = '✓ URL verificada en la web oficial'; }
-    else if (urlStatus === 'failed') { statusCls = 'failed'; statusTitle = '✗ No se encontró en la web oficial'; }
-    else if (urlStatus === 'guessed' || slug) { statusCls = 'guessed'; statusTitle = '⚠ URL estimada algorítmicamente'; }
-
-    const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : '');
-    const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
-
-    tr.innerHTML = `
-      <td><button class="toggle-btn" id="tb${i}" onclick="toggleRow(${i})">${hasKids ? (state.expanded[i]?'−':'+') : ' '}</button></td>
-      <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
-      <td><div class="name-cell" style="padding-left:${indent}px">
-        <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
-        <span class="url-status ${statusCls}" title="${statusTitle}"></span>
-      </div></td>
-      <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
-      <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
-    `;
-    
+    const tr = construirFila(item, i);
     tbody.appendChild(tr);
-    rows.push({tr, level, i, name, titular});
+    rows.push({tr, level: item[0], i, name: item[2], titular: item[3]});
   });
-  
+
   applyVisibility();
+  document.getElementById('stat-total').textContent = DATA.length;
+  document.getElementById('stat-urls').textContent = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+  document.getElementById('stat-titulares').textContent = DATA.filter(d => d[3] && d[3] !== '').length;
+}
+
+function construirFila(item, i) {
+  const [level, tipo, name, titular, slug, urlStatus, titularSource] = item;
+  const url = slug ? (BASE + slug) : '#';
+  const lvl = level > 5 ? 5 : level;
+
+  const tr = document.createElement('tr');
+  tr.className = `row-data l${lvl}`;
+  tr.id = 'r' + i;
+
+  const nextItem = DATA[i+1];
+  const hasKids = nextItem && nextItem[0] > level;
+  if (state.expanded[i] === undefined) state.expanded[i] = level < 2;
+
+  const indent = level * 16;
+
+  let statusCls = 'unknown', statusTitle = 'Sin URL';
+  if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL verificada en la web oficial'; }
+  else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No se encontró en la web oficial'; }
+  else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada' || slug) { statusCls = 'guessed'; statusTitle = '⚠ URL estimada algorítmicamente'; }
+
+  const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : '');
+  const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
+
+  tr.innerHTML = `
+    <td><button class="toggle-btn" id="tb${i}" onclick="toggleRow(${i})">${hasKids ? (state.expanded[i]?'−':'+') : ' '}</button></td>
+    <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
+    <td><div class="name-cell" style="padding-left:${indent}px">
+      <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
+      <span class="url-status ${statusCls}" title="${statusTitle}"></span>
+    </div></td>
+    <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
+    <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
+  `;
+  return tr;
+}
+
+function actualizarFila(idx) {
+  const item = DATA[idx];
+  if (!item) return;
+  const oldTr = document.getElementById('r' + idx);
+  if (!oldTr) return;
+  const newTr = construirFila(item, idx);
+  oldTr.parentNode.replaceChild(newTr, oldTr);
+  if (rows[idx]) {
+    rows[idx].tr = newTr;
+    rows[idx].titular = item[3];
+  }
 }
 
 function escapeHtml(s) {
@@ -212,7 +491,7 @@ function escapeHtml(s) {
 }
 
 // ==========================================
-// 4. LÓGICA DE FILTRADO (Por Nombre "Empieza Por")
+// FILTRADO Y EXPANSIÓN
 // ==========================================
 function applyVisibility() {
   const tf = state.typeFilter; 
@@ -235,9 +514,7 @@ function applyVisibility() {
         if (tf !== 'all') {
             const nombreNormalizado = normalizarTexto(name);       
             const botonNormalizado = normalizarTexto(tf);          
-            if (!nombreNormalizado.startsWith(botonNormalizado)) {
-                visible = false;
-            }
+            if (!nombreNormalizado.startsWith(botonNormalizado)) visible = false;
         }
     }
     
@@ -250,43 +527,33 @@ function applyVisibility() {
   }
 }
 
-function toggleRow(i) { 
-  state.expanded[i] = !state.expanded[i]; 
-  document.getElementById('tb' + i).textContent = state.expanded[i] ? '−' : '+'; 
-  applyVisibility(); 
-}
-
-function setTypeFilter(el, type) { 
-  state.typeFilter = type; 
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); 
-  el.classList.add('active'); 
-  applyVisibility(); 
-}
-
-function filterRows() { 
-  state.searchQuery = document.getElementById('search-box').value; 
-  applyVisibility(); 
-}
-
+function toggleRow(i) { state.expanded[i] = !state.expanded[i]; document.getElementById('tb' + i).textContent = state.expanded[i] ? '−' : '+'; applyVisibility(); }
+function setTypeFilter(el, type) { state.typeFilter = type; document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyVisibility(); }
+function filterRows() { state.searchQuery = document.getElementById('search-box').value; applyVisibility(); }
 function collapseAll() { rows.forEach((_,i) => { state.expanded[i] = false; const b=document.getElementById('tb'+i); if(b)b.textContent='+'; }); applyVisibility(); }
 function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
 
 // ==========================================
-// 5. EXPORTAR A EXCEL DESDE EL NAVEGADOR
+// EXPORTAR A EXCEL
 // ==========================================
 function exportExcel() {
   if (!DATA.length) { alert('Los datos aún no se han cargado.'); return; }
   const wb = XLSX.utils.book_new();
-  const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'URL Oficial']];
+  const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'URL Oficial', 'Estado URL']];
   
-  DATA.forEach(([level, tipo, name, titular, slug]) => {
-    wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', slug ? (BASE + slug) : '']);
+  DATA.forEach(([level, tipo, name, titular, slug, urlStatus]) => {
+    let estadoTexto = urlStatus;
+    if (urlStatus === 'verified' || urlStatus === '✓ Verificada') estadoTexto = '✓ Verificada';
+    else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') estadoTexto = '✗ No encontrada';
+    else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') estadoTexto = '⚠ Estimada';
+
+    wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', slug ? (BASE + slug) : '', estadoTexto]);
   });
   
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:85}];
+  ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:85},{wch:15}];
   XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
-  XLSX.writeFile(wb, 'Consulta_Organizacion_CM.xlsx');
+  XLSX.writeFile(wb, 'Consulta_Organizacion_CM_Actualizado.xlsx');
 }
 </script>
 </body>
