@@ -39,7 +39,6 @@
   #search-box { border: 1px solid #c5d5e8; border-radius: 5px; padding: 5px 12px; font-size: 12px; width: 250px; outline: none; }
   #search-box:focus { border-color: #2E75B6; box-shadow: 0 0 0 2px rgba(46, 117, 182, 0.2); }
 
-  /* Estilo para el nuevo contador dinámico */
   #visible-counter { margin-left: auto; font-size: 13px; color: #1F3864; font-weight: 700; background: #eaf1fb; padding: 5px 12px; border-radius: 5px; border: 1px dashed #2E75B6; }
 
   #table-wrap { overflow: auto; max-height: calc(100vh - 175px); }
@@ -177,7 +176,6 @@ async function cargarDatosAutomaticos() {
     DATA = await response.json();
     init();
     
-    const verificadas = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
     statusEl.innerHTML = `✅ Base de datos conectada. Listos para consultar.`;
     document.getElementById('btn-crawl').disabled = false;
 
@@ -191,38 +189,26 @@ function normalizarTexto(texto) {
     return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
 }
 
-function generarSlugCM(nombre) {
-  let s = normalizarTexto(nombre);
-  s = s.replace(/\bsgt\b/g, 'secretaria general tecnica');
-  s = s.replace(/\bue\b/g, 'union europea');
-  s = s.replace(/\bcm\b/g, 'comunidad madrid');
-  s = s.replace(/\brrhh\b/g, 'recursos humanos');
-  s = s.replace(/\badmon\b/g, 'administracion');
-  s = s.replace(/\b(de|del|la|las|el|los|en|con|a|al|para|por)\b/g, ' ');
-  s = s.replace(/[^\w\s\-]/g, '');
-  s = s.replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
-  return s;
-}
-
 function tokensSinStopwords(text) {
   return normalizarTexto(text).split(/\s+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
 }
 
 function nombresCoinciden(a, b) {
-  const na = normalizarTexto(a);
-  const nb = normalizarTexto(b);
+  let na = normalizarTexto(a).replace(/\bue\b/g, 'union europea');
+  let nb = normalizarTexto(b).replace(/\bue\b/g, 'union europea');
+  
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.includes(nb) && nb.length > na.length * 0.6) return true;
-  if (nb.includes(na) && na.length > nb.length * 0.6) return true;
+  if (na.includes(nb) && nb.length > na.length * 0.4) return true;
+  if (nb.includes(na) && na.length > nb.length * 0.4) return true;
   
-  const ta = new Set(tokensSinStopwords(a));
-  const tb = new Set(tokensSinStopwords(b));
+  const ta = new Set(tokensSinStopwords(na));
+  const tb = new Set(tokensSinStopwords(nb));
   if (ta.size === 0 || tb.size === 0) return false;
   let ov = 0;
   for (const x of ta) if (tb.has(x)) ov++;
   const minSize = Math.min(ta.size, tb.size);
-  return (ov / minSize) >= 0.75;
+  return (ov / minSize) >= 0.50; // Tolerancia bajada al 50%
 }
 
 function logCrawl(msg, type = '') {
@@ -234,19 +220,20 @@ function logCrawl(msg, type = '') {
 }
 
 function generarCandidatos(slug, nombre) {
+  const s_norm = normalizarTexto(nombre);
+  
+  let b1 = s_norm.replace(/[^\w\s\-]/g, '').replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+  let b2 = s_norm.replace(/\b(de|del|la|las|el|los|en|con|a|al|para|por)\b/g, ' ').replace(/[^\w\s\-]/g, '').replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+  let b3 = s_norm.replace(/\b(de|la|las|los|en|con|a|para|por)\b/g, ' ').replace(/[^\w\s\-]/g, '').replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+
+  const bases = [b1, b2, b3];
+  if (slug && !bases.includes(slug)) bases.push(slug);
+  
   const set = new Set();
-  const bases = [];
-  
-  if (slug) bases.push(slug);
-  if (nombre) {
-      const s2 = generarSlugCM(nombre);
-      if (s2 && s2 !== slug) bases.push(s2);
-  }
-  
   bases.forEach(base => {
       set.add(base);
       for (let n = 0; n < 6; n++) set.add(base + '-' + n);
-      if (base.length > 20) {
+      if (base.length > 15) {
         const parts = base.split('-');
         for (let cut = 1; cut <= 5 && parts.length - cut > 2; cut++) {
           const shorter = parts.slice(0, parts.length - cut).join('-');
@@ -258,7 +245,7 @@ function generarCandidatos(slug, nombre) {
   return [...set];
 }
 
-async function fetchViaProxy(url, timeoutMs = 12000) {
+async function fetchViaProxy(url, timeoutMs = 8000) {
   if (cache.pageHtml.has(url)) return cache.pageHtml.get(url);
   if (cache.notFound.has(url)) return null;
 
@@ -334,7 +321,7 @@ async function lanzarCrawler() {
   let totalVerificadas = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
   let totalTitulares = DATA.filter(d => d[3] && d[3] !== '').length;
 
-  const BATCH_SIZE = 4; 
+  const BATCH_SIZE = 3; 
 
   for (let batchStart = 0; batchStart < pendingIdx.length && !crawlAbort; batchStart += BATCH_SIZE) {
     const batchIndices = pendingIdx.slice(batchStart, batchStart + BATCH_SIZE);
@@ -429,7 +416,6 @@ function init() {
   tbody.innerHTML = '';
   rows.length = 0;
 
-  // Filtro de limpieza de entidades del sector público
   DATA = DATA.filter(item => {
       const nombreUnidad = normalizarTexto(item[2] || "");
       return !nombreUnidad.includes("otras entidades del sector");
@@ -502,13 +488,10 @@ function escapeHtml(s) {
   return s.toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
-// ==========================================
-// CONTROL DE VISIBILIDAD Y ACTUALIZACIÓN DE CONTADOR
-// ==========================================
 function applyVisibility() {
   const tf = state.typeFilter; 
   const q = normalizarTexto(state.searchQuery);
-  let countVisible = 0; // Iniciamos el contador
+  let countVisible = 0;
   
   for (let i = 0; i < rows.length; i++) {
     const {tr, level, name, titular} = rows[i];
@@ -537,14 +520,9 @@ function applyVisibility() {
     }
     
     tr.style.display = visible ? '' : 'none';
-    
-    // Si la fila ha superado todos los filtros y es visible, sumamos 1 al contador
-    if (visible) {
-        countVisible++;
-    }
+    if (visible) countVisible++;
   }
   
-  // Actualizamos el número en el HTML
   document.getElementById('visible-counter').innerHTML = `Mostrando: <b>${countVisible}</b> resultados`;
 }
 
@@ -554,9 +532,6 @@ function filterRows() { state.searchQuery = document.getElementById('search-box'
 function collapseAll() { rows.forEach((_,i) => { state.expanded[i] = false; const b=document.getElementById('tb'+i); if(b)b.textContent='+'; }); applyVisibility(); }
 function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
 
-// ==========================================
-// EXPORTAR A EXCEL
-// ==========================================
 function exportExcel() {
   if (!DATA.length) { alert('Los datos aún no se han cargado.'); return; }
   const wb = XLSX.utils.book_new();
