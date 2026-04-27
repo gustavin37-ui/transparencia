@@ -173,20 +173,31 @@ async function cargarDatosAutomaticos() {
   try {
     const response = await fetch('data.json');
     if (!response.ok) throw new Error('Archivo no encontrado');
-    
     DATA = await response.json();
     init();
-    
     statusEl.innerHTML = `✅ Base de datos conectada. Listos para consultar o buscar pendientes.`;
     document.getElementById('btn-crawl').disabled = false;
   } catch (err) {
-    statusEl.innerHTML = `❌ <b>Aviso:</b> No se encontró 'data.json'. Pulsa 'Cargar XML' para importar datos locales.`;
+    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'.`;
   }
 }
 
 function normalizarTexto(texto) {
     if (!texto) return "";
     return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
+}
+
+function generarSlugCM(nombre) {
+  let s = normalizarTexto(nombre);
+  s = s.replace(/\bsgt\b/g, 'secretaria general tecnica');
+  s = s.replace(/\bue\b/g, 'union europea');
+  s = s.replace(/\bcm\b/g, 'comunidad madrid');
+  s = s.replace(/\brrhh\b/g, 'recursos humanos');
+  s = s.replace(/\badmon\b/g, 'administracion');
+  s = s.replace(/\b(de|del|la|las|el|los|en|con|a|al|para|por)\b/g, ' ');
+  s = s.replace(/[^\w\s\-]/g, '');
+  s = s.replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+  return s;
 }
 
 function tokensSinStopwords(text) {
@@ -220,16 +231,26 @@ function logCrawl(msg, type = '') {
 
 function generarCandidatos(slug, nombre) {
   const set = new Set();
-  if (slug) set.add(slug);
-  if (slug) { for (let n = 0; n < 6; n++) set.add(slug + '-' + n); }
-  if (slug && slug.length > 30) {
-    const parts = slug.split('-');
-    for (let cut = 1; cut <= 3 && parts.length - cut > 3; cut++) {
-      const shorter = parts.slice(0, parts.length - cut).join('-');
-      set.add(shorter);
-      for (let n = 0; n < 4; n++) set.add(shorter + '-' + n);
-    }
+  const bases = [];
+  
+  if (slug) bases.push(slug);
+  if (nombre) {
+      const s2 = generarSlugCM(nombre);
+      if (s2 && s2 !== slug) bases.push(s2);
   }
+  
+  bases.forEach(base => {
+      set.add(base);
+      for (let n = 0; n < 6; n++) set.add(base + '-' + n);
+      if (base.length > 20) {
+        const parts = base.split('-');
+        for (let cut = 1; cut <= 5 && parts.length - cut > 2; cut++) {
+          const shorter = parts.slice(0, parts.length - cut).join('-');
+          set.add(shorter);
+          for (let n = 0; n < 4; n++) set.add(shorter + '-' + n);
+        }
+      }
+  });
   return [...set];
 }
 
@@ -301,7 +322,7 @@ async function lanzarCrawler() {
         pendingIdx.push(i);
     }
   }
-  logCrawl(`=== Crawler web iniciado · ${pendingIdx.length} unidades sin URL oficial confirmada ===`, 'info');
+  logCrawl(`=== Crawler web iniciado · ${pendingIdx.length} unidades pendientes ===`, 'info');
 
   const t0 = Date.now();
   let processed = 0;
@@ -369,7 +390,7 @@ async function lanzarCrawler() {
     const eta = (pendingIdx.length - processed) / Math.max(rate, 0.1);
 
     fill.style.width = ((processed / pendingIdx.length) * 100) + '%';
-    statusEl.textContent = `Buscando: ${processed}/${pendingIdx.length} · ${newlyVerified} encontradas en esta sesión`;
+    statusEl.textContent = `Buscando: ${processed}/${pendingIdx.length} · ${newlyVerified} encontradas`;
     document.getElementById('stat-urls').textContent = totalVerificadas;
     document.getElementById('stat-titulares').textContent = totalTitulares;
     etaEl.textContent = formatearETA(eta);
@@ -403,6 +424,11 @@ function init() {
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '';
   rows.length = 0;
+
+  DATA = DATA.filter(item => {
+      const nombreUnidad = normalizarTexto(item[2] || "");
+      return !nombreUnidad.includes("otras entidades del sector");
+  });
 
   DATA.forEach((item, i) => {
     const tr = construirFila(item, i);
@@ -514,19 +540,6 @@ function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b
 // ==========================================
 // CARGA LOCAL DE XML (Por si falla data.json)
 // ==========================================
-function generarSlugCM(nombre) {
-  let s = normalizarTexto(nombre);
-  s = s.replace(/\bsgt\b/g, 'secretaria general tecnica');
-  s = s.replace(/\bue\b/g, 'union europea');
-  s = s.replace(/\bcm\b/g, 'comunidad madrid');
-  s = s.replace(/\brrhh\b/g, 'recursos humanos');
-  s = s.replace(/\badmon\b/g, 'administracion');
-  s = s.replace(/\b(de|del|la|las|el|los|en|con|a|al|para|por)\b/g, ' ');
-  s = s.replace(/[^\w\s\-]/g, '');
-  s = s.replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
-  return s;
-}
-
 function tipificar(name) {
     const nLow = normalizarTexto(name);
     if (nLow.startsWith('viceconsejeria')) return 'Viceconsejería';
@@ -539,18 +552,6 @@ function tipificar(name) {
     if (nLow.startsWith('secretaria general')) return 'Secretaría General';
     if (nLow.startsWith('agencia')) return 'Agencia';
     if (nLow.startsWith('comisionado')) return 'Comisionado';
-    if (nLow.startsWith('delegacion')) return 'Delegación';
-    if (nLow.startsWith('jefatura')) return 'Jefatura';
-    if (nLow.startsWith('oficina')) return 'Oficina';
-    if (nLow.startsWith('servicio')) return 'Servicio';
-    if (nLow.startsWith('unidad')) return 'Unidad';
-    if (nLow.startsWith('comision')) return 'Comisión';
-    if (nLow.startsWith('consejo')) return 'Consejo';
-    if (nLow.startsWith('archivo')) return 'Archivo';
-    if (nLow.startsWith('intervencion')) return 'Intervención';
-    if (nLow.startsWith('abogacia')) return 'Abogacía';
-    if (nLow.startsWith('organismo')) return 'Organismo Autónomo';
-    if (nLow.startsWith('instituto')) return 'Instituto';
     return 'Unidad';
 }
 
@@ -588,10 +589,7 @@ function procesarXMLLocal(event) {
       function traverse(node, level) {
         const name = getDirectText(node, 'nombre');
         if (!name) return;
-        
-        // --- FILTRO: Ignorar "Otras entidades del sector Público" ---
         if (normalizarTexto(name).includes("otras entidades del sector")) return;
-        // ------------------------------------------------------------
 
         const titular = getDirectText(node, 'responsable');
         const tipo = tipificar(name);
@@ -634,7 +632,6 @@ function procesarXMLLocal(event) {
       init();
 
       fill.style.width = '100%';
-      const conTitular = DATA.filter(d => d[3]).length;
       statusEl.innerHTML = `✅ XML cargado · <strong>${DATA.length} unidades</strong>. Las URLs son estimadas (🟠).`;
 
       btnC.disabled = false;
@@ -668,7 +665,7 @@ function exportExcel() {
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:85},{wch:15}];
   XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
-  XLSX.writeFile(wb, 'Consulta_Organizacion_CM.xlsx');
+  XLSX.writeFile(wb, 'Consulta_Organizacion_CM_Actualizado.xlsx');
 }
 </script>
 </body>
