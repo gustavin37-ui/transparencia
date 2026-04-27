@@ -32,8 +32,10 @@
   #search-box:focus { border-color: #2E75B6; box-shadow: 0 0 0 2px rgba(46, 117, 182, 0.2); }
 
   #visible-counter { margin-left: auto; font-size: 13px; color: #1F3864; font-weight: 700; background: #eaf1fb; padding: 5px 12px; border-radius: 5px; border: 1px dashed #2E75B6; }
+  
+  #info-box { background: #eaf1fb; border: 1px solid #2E75B6; border-radius: 5px; padding: 8px 12px; margin: 8px 18px; font-size: 11px; color: #1F3864; }
 
-  #table-wrap { overflow: auto; max-height: calc(100vh - 145px); }
+  #table-wrap { overflow: auto; max-height: calc(100vh - 185px); }
 
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #2E75B6; color: white; padding: 10px; font-size: 11px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-align: left; white-space: nowrap; }
@@ -53,15 +55,19 @@
   .name-link { color: inherit; text-decoration: none; font-weight: inherit; }
   .name-link:hover { text-decoration: underline; color: #2E75B6; }
   
-  .url-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; flex-shrink: 0; }
+  .url-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; flex-shrink: 0; cursor: pointer; transition: transform 0.2s; }
+  .url-status:hover { transform: scale(1.8); }
   .url-status.verified { background: #27ae60; box-shadow: 0 0 0 1px #fff; }
   .url-status.failed   { background: #c0392b; box-shadow: 0 0 0 1px #fff; }
+  .url-status.guessed  { background: #e67e22; box-shadow: 0 0 0 1px #fff; }
 
   .tipo-badge { font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: 600; white-space: nowrap; letter-spacing: 0.5px; }
 
   .titular-cell { color: #2c3e50; }
   .titular-cell.from-crawl { color: #1a7a3c; font-weight: 500; }
   .titular-cell.from-crawl::before { content: "✓ "; color: #27ae60; font-weight: bold; }
+  .titular-cell.from-manual { color: #8e44ad; font-weight: 500; }
+  .titular-cell.from-manual::before { content: "✏️ "; color: #8e44ad; }
   .titular-cell.loaded { color: #1a7a3c; font-weight: 500; }
 
   .l0 td { background: #1F3864 !important; color: white !important; font-weight: 700; font-size: 13px; }
@@ -112,6 +118,10 @@
   <span id="visible-counter">Mostrando: <b>0</b> resultados</span>
 </div>
 
+<div id="info-box">
+  💡 <strong>Truco:</strong> Si ves un punto Rojo o Naranja pero tú conoces el enlace correcto, <strong>haz clic sobre el punto</strong> para corregir la URL a mano y ponerlo en Verde.
+</div>
+
 <div id="table-wrap">
 <table id="org-table">
   <thead>
@@ -137,15 +147,16 @@ const rows = [];
 async function cargarDatosAutomaticos() {
   const statusEl = document.getElementById('status-text');
   try {
-    const response = await fetch('data.json');
+    // Evitar el cacheo añadiendo un timestamp aleatorio a la petición
+    const response = await fetch('data.json?v=' + new Date().getTime());
     if (!response.ok) throw new Error('Archivo no encontrado');
     
     DATA = await response.json();
     init();
     
-    statusEl.innerHTML = `✅ Base de datos conectada. Mapeo generado por Araña Web.`;
+    statusEl.innerHTML = `✅ Base de datos conectada.`;
   } catch (err) {
-    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'. Ejecuta tu script de Python para crearlo.`;
+    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'. Asegúrate de que está en la misma carpeta.`;
   }
 }
 
@@ -172,9 +183,7 @@ function init() {
   });
 
   applyVisibility();
-  document.getElementById('stat-total').textContent = DATA.length;
-  document.getElementById('stat-urls').textContent = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
-  document.getElementById('stat-titulares').textContent = DATA.filter(d => d[3] && d[3] !== '').length;
+  actualizarContadoresGlobales();
 }
 
 function construirFila(item, i) {
@@ -193,10 +202,12 @@ function construirFila(item, i) {
 
   const indent = level * 16;
 
-  let statusCls = 'failed', statusTitle = '✗ No enlazado en el organigrama oficial';
-  if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL confirmada por la Araña Web'; }
+  let statusCls = 'unknown', statusTitle = 'Sin URL';
+  if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL verificada (Clic para editar)'; }
+  else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada en la web (Clic para fijar a mano)'; }
+  else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada (Clic para fijar a mano)'; }
 
-  const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : '');
+  const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titularSource === 'manual' ? 'from-manual' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : ''));
   const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
 
   tr.innerHTML = `
@@ -204,12 +215,72 @@ function construirFila(item, i) {
     <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
     <td><div class="name-cell" style="padding-left:${indent}px">
       <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
-      <span class="url-status ${statusCls}" title="${statusTitle}"></span>
+      <span class="url-status ${statusCls}" title="${statusTitle}" onclick="editarURL(${i})"></span>
     </div></td>
     <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
     <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
   `;
   return tr;
+}
+
+// FUNCION DE EDICIÓN MANUAL
+function editarURL(idx) {
+  const item = DATA[idx];
+  const currentSlug = item[4] || '';
+  const currentUrl = currentSlug ? (BASE + currentSlug) : BASE;
+
+  const mensaje = `✏️ MODO EDICIÓN MANUAL\n\nEstás editando el enlace de:\n"${item[2]}"\n\nPega aquí la URL completa que has encontrado en internet para forzar el semáforo a VERDE:`;
+  const nuevaUrl = prompt(mensaje, currentUrl);
+
+  if (nuevaUrl !== null) { 
+    let nuevoSlug = currentSlug;
+
+    if (nuevaUrl.includes('/transparencia/unidad-organizativa-responsable/')) {
+       nuevoSlug = nuevaUrl.split('/transparencia/unidad-organizativa-responsable/')[1].trim();
+    } else if (nuevaUrl.trim() !== '' && !nuevaUrl.includes('http')) {
+       nuevoSlug = nuevaUrl.trim(); 
+    }
+
+    if (nuevoSlug) {
+        DATA[idx][4] = nuevoSlug;
+        DATA[idx][5] = 'verified';
+        
+        // Titular manual
+        if(!item[3] || item[3] === '') {
+            const nuevoTitular = prompt(`¿Quieres añadir también el nombre del Titular/Responsable? (Déjalo en blanco si no lo sabes)`);
+            if(nuevoTitular) {
+                DATA[idx][3] = nuevoTitular.trim();
+                DATA[idx][6] = 'manual';
+            }
+        }
+
+        actualizarFila(idx);
+        actualizarContadoresGlobales();
+
+        document.getElementById('info-box').innerHTML = `✅ <strong>¡Actualizado!</strong> El semáforo de "${item[2]}" ya está en Verde. Dale a 📥 Exportar Excel para guardar los cambios en tu PC.`;
+        document.getElementById('info-box').style.background = '#eafbf1';
+        document.getElementById('info-box').style.borderColor = '#27ae60';
+    }
+  }
+}
+
+function actualizarContadoresGlobales() {
+    document.getElementById('stat-total').textContent = DATA.length;
+    document.getElementById('stat-urls').textContent = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+    document.getElementById('stat-titulares').textContent = DATA.filter(d => d[3] && d[3] !== '').length;
+}
+
+function actualizarFila(idx) {
+  const item = DATA[idx];
+  if (!item) return;
+  const oldTr = document.getElementById('r' + idx);
+  if (!oldTr) return;
+  const newTr = construirFila(item, idx);
+  oldTr.parentNode.replaceChild(newTr, oldTr);
+  if (rows[idx]) {
+    rows[idx].tr = newTr;
+    rows[idx].titular = item[3];
+  }
 }
 
 function escapeHtml(s) {
@@ -263,15 +334,28 @@ function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b
 function exportExcel() {
   if (!DATA.length) { alert('Los datos aún no se han cargado.'); return; }
   const wb = XLSX.utils.book_new();
-  const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'URL Oficial', 'Estado URL']];
+  const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'Origen Titular', 'URL Oficial', 'Estado URL']];
   
-  DATA.forEach(([level, tipo, name, titular, slug, urlStatus]) => {
+  DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
     let estadoTexto = urlStatus === 'verified' || urlStatus === '✓ Verificada' ? '✓ Verificada' : '✗ No encontrada';
-    wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', slug ? (BASE + slug) : '', estadoTexto]);
+    if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') estadoTexto = '⚠ Estimada';
+    
+    let origen = '';
+    if(titularSource === 'crawl') origen = 'Araña Web';
+    if(titularSource === 'manual') origen = 'Manual';
+    if(titularSource === 'xml') origen = 'XML';
+
+    wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', estadoTexto]);
   });
   
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:85},{wch:15}];
+  ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:12},{wch:85},{wch:15}];
+  
+  for (let r = 2; r <= wsData.length; r++) {
+    const url = wsData[r - 1][5];
+    if (url) XLSX.utils.cell_add_comment(ws[XLSX.utils.encode_cell({ c: 5, r: r - 1 })], 'Enlace web', 'Portal');
+  }
+
   XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
   XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
 }
