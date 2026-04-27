@@ -39,6 +39,9 @@
   #search-box { border: 1px solid #c5d5e8; border-radius: 5px; padding: 5px 12px; font-size: 12px; width: 250px; outline: none; }
   #search-box:focus { border-color: #2E75B6; box-shadow: 0 0 0 2px rgba(46, 117, 182, 0.2); }
 
+  /* Estilo para el nuevo contador dinámico */
+  #visible-counter { margin-left: auto; font-size: 13px; color: #1F3864; font-weight: 700; background: #eaf1fb; padding: 5px 12px; border-radius: 5px; border: 1px dashed #2E75B6; }
+
   #table-wrap { overflow: auto; max-height: calc(100vh - 175px); }
 
   table { width: 100%; border-collapse: collapse; }
@@ -100,13 +103,9 @@
     <button class="btn btn-collapse" onclick="collapseAll()">⊟ Colapsar todo</button>
     <button class="btn btn-collapse" onclick="expandAll()">⊞ Expandir todo</button>
     
-    <input type="file" id="file-input" accept=".xml" style="display: none;" onchange="procesarXMLLocal(event)">
-    <button class="btn btn-fetch" id="btn-fetch" onclick="document.getElementById('file-input').click()">📁 Cargar XML (Local)</button>
-    
     <button class="btn btn-crawl" id="btn-crawl" onclick="lanzarCrawler()" disabled>🔍 Buscar URLs Pendientes</button>
     <button class="btn btn-stop" id="btn-stop" onclick="abortCrawl()">⏹ Parar</button>
     <button class="btn btn-collapse" onclick="document.getElementById('crawl-log').classList.toggle('show')">📋 Log</button>
-    
     <button class="btn btn-export" onclick="exportExcel()">📥 Exportar Excel</button>
   </div>
 </div>
@@ -134,6 +133,7 @@
     <span class="filter-chip" onclick="setTypeFilter(this,'División')">División</span>
     <span class="filter-chip" onclick="setTypeFilter(this,'Área')">Área</span>
   </div>
+  <span id="visible-counter">Mostrando: <b>0</b> resultados</span>
 </div>
 
 <div id="table-wrap">
@@ -173,12 +173,16 @@ async function cargarDatosAutomaticos() {
   try {
     const response = await fetch('data.json');
     if (!response.ok) throw new Error('Archivo no encontrado');
+    
     DATA = await response.json();
     init();
-    statusEl.innerHTML = `✅ Base de datos conectada. Listos para consultar o buscar pendientes.`;
+    
+    const verificadas = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+    statusEl.innerHTML = `✅ Base de datos conectada. Listos para consultar.`;
     document.getElementById('btn-crawl').disabled = false;
+
   } catch (err) {
-    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'.`;
+    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'. Ejecuta tu script de Python para crearlo.`;
   }
 }
 
@@ -425,6 +429,7 @@ function init() {
   tbody.innerHTML = '';
   rows.length = 0;
 
+  // Filtro de limpieza de entidades del sector público
   DATA = DATA.filter(item => {
       const nombreUnidad = normalizarTexto(item[2] || "");
       return !nombreUnidad.includes("otras entidades del sector");
@@ -497,9 +502,13 @@ function escapeHtml(s) {
   return s.toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
+// ==========================================
+// CONTROL DE VISIBILIDAD Y ACTUALIZACIÓN DE CONTADOR
+// ==========================================
 function applyVisibility() {
   const tf = state.typeFilter; 
   const q = normalizarTexto(state.searchQuery);
+  let countVisible = 0; // Iniciamos el contador
   
   for (let i = 0; i < rows.length; i++) {
     const {tr, level, name, titular} = rows[i];
@@ -528,7 +537,15 @@ function applyVisibility() {
     }
     
     tr.style.display = visible ? '' : 'none';
+    
+    // Si la fila ha superado todos los filtros y es visible, sumamos 1 al contador
+    if (visible) {
+        countVisible++;
+    }
   }
+  
+  // Actualizamos el número en el HTML
+  document.getElementById('visible-counter').innerHTML = `Mostrando: <b>${countVisible}</b> resultados`;
 }
 
 function toggleRow(i) { state.expanded[i] = !state.expanded[i]; document.getElementById('tb' + i).textContent = state.expanded[i] ? '−' : '+'; applyVisibility(); }
@@ -538,116 +555,8 @@ function collapseAll() { rows.forEach((_,i) => { state.expanded[i] = false; cons
 function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
 
 // ==========================================
-// CARGA LOCAL DE XML (Por si falla data.json)
+// EXPORTAR A EXCEL
 // ==========================================
-function tipificar(name) {
-    const nLow = normalizarTexto(name);
-    if (nLow.startsWith('viceconsejeria')) return 'Viceconsejería';
-    if (nLow.startsWith('direccion general')) return 'Dirección General';
-    if (nLow.startsWith('subdireccion')) return 'Subdirección General';
-    if (nLow.startsWith('division')) return 'División';
-    if (nLow.startsWith('area')) return 'Área';
-    if (nLow.startsWith('consejeria')) return 'Consejería';
-    if (nLow.startsWith('secretaria general tecnica')) return 'Secretaría General Técnica';
-    if (nLow.startsWith('secretaria general')) return 'Secretaría General';
-    if (nLow.startsWith('agencia')) return 'Agencia';
-    if (nLow.startsWith('comisionado')) return 'Comisionado';
-    return 'Unidad';
-}
-
-function procesarXMLLocal(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const btnF = document.getElementById('btn-fetch');
-  const btnC = document.getElementById('btn-crawl');
-  const statusEl = document.getElementById('status-text');
-  const fill = document.getElementById('progress-fill');
-
-  btnF.disabled = true;
-  btnF.textContent = '⏳ Procesando XML...';
-  statusEl.textContent = 'Procesando XML local...';
-  fill.style.width = '30%';
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
-      if (xmlDoc.getElementsByTagName("parsererror").length > 0) throw new Error("XML Inválido");
-
-      const newData = [];
-
-      function getDirectText(node, tagName) {
-        for (let i = 0; i < node.childNodes.length; i++) {
-          if (node.childNodes[i].nodeName.toLowerCase() === tagName.toLowerCase()) {
-            return node.childNodes[i].textContent.trim();
-          }
-        }
-        return "";
-      }
-
-      function traverse(node, level) {
-        const name = getDirectText(node, 'nombre');
-        if (!name) return;
-        if (normalizarTexto(name).includes("otras entidades del sector")) return;
-
-        const titular = getDirectText(node, 'responsable');
-        const tipo = tipificar(name);
-        const slug = generarSlugCM(name);
-
-        newData.push([level, tipo, name, titular, slug, 'guessed', titular ? 'xml' : '']);
-
-        ['organismos', 'centros'].forEach(contName => {
-          for (let i = 0; i < node.childNodes.length; i++) {
-            if (node.childNodes[i].nodeName.toLowerCase() === contName) {
-              const children = node.childNodes[i].childNodes;
-              for (let j = 0; j < children.length; j++) {
-                if (children[j].nodeType === 1) traverse(children[j], level + 1);
-              }
-            }
-          }
-        });
-      }
-
-      const root = xmlDoc.getElementsByTagName('consejerias')[0];
-      newData.push([0, "Presidenta", "Presidenta de la Comunidad de Madrid", "Isabel Díaz Ayuso", "presidenta", 'verified', 'xml']);
-
-      if (root) {
-        for (let i = 0; i < root.childNodes.length; i++) {
-          if (root.childNodes[i].nodeName.toLowerCase() === 'consejeria') traverse(root.childNodes[i], 0);
-        }
-      }
-
-      DATA = newData;
-      state.expanded = {};
-      state.typeFilter = 'all';
-      state.searchQuery = '';
-      document.getElementById('search-box').value = '';
-      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-      document.querySelector('.filter-chip[onclick*="all"]').classList.add('active');
-
-      cache.pageHtml.clear();
-      cache.notFound.clear();
-
-      init();
-
-      fill.style.width = '100%';
-      statusEl.innerHTML = `✅ XML cargado · <strong>${DATA.length} unidades</strong>. Las URLs son estimadas (🟠).`;
-
-      btnC.disabled = false;
-    } catch(err) {
-      console.error(err);
-      statusEl.textContent = '❌ Error: ' + err.message;
-      fill.style.width = '0%';
-    }
-    btnF.disabled = false;
-    btnF.textContent = '📁 Cargar otro XML';
-    event.target.value = '';
-  };
-
-  reader.readAsText(file);
-}
-
 function exportExcel() {
   if (!DATA.length) { alert('Los datos aún no se han cargado.'); return; }
   const wb = XLSX.utils.book_new();
