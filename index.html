@@ -13,10 +13,13 @@
 
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { border: none; cursor: pointer; border-radius: 5px; font-size: 11px; font-weight: 600; padding: 6px 12px; transition: all .2s; display: inline-flex; align-items: center; gap: 5px; }
-  .btn-export { background: #f39c12; color: white; }
+  .btn-export { background: #f39c12; color: white; display: none; }
   .btn-export:hover { background: #d68910; }
   .btn-collapse { background: rgba(255,255,255,.2); color: white; }
   .btn-collapse:hover { background: rgba(255,255,255,.3); }
+  
+  #btn-admin { background: #34495e; color: white; margin-left: 10px; border: 1px solid rgba(255,255,255,0.3); }
+  #btn-admin:hover { background: #2c3e50; }
 
   #status-bar { background: #2c3e50; color: #ecf0f1; font-size: 11px; padding: 6px 18px; display: flex; justify-content: space-between; align-items: center; }
   #stats { display: flex; gap: 14px; }
@@ -33,7 +36,7 @@
 
   #visible-counter { margin-left: auto; font-size: 13px; color: #1F3864; font-weight: 700; background: #eaf1fb; padding: 5px 12px; border-radius: 5px; border: 1px dashed #2E75B6; }
   
-  #info-box { background: #eaf1fb; border: 1px solid #2E75B6; border-radius: 5px; padding: 8px 12px; margin: 8px 18px; font-size: 11px; color: #1F3864; }
+  #info-box { background: #eaf1fb; border: 1px solid #2E75B6; border-radius: 5px; padding: 8px 12px; margin: 8px 18px; font-size: 11px; color: #1F3864; display: none; }
 
   #table-wrap { overflow: auto; max-height: calc(100vh - 185px); }
 
@@ -68,7 +71,6 @@
   .titular-cell.from-crawl::before { content: "✓ "; color: #27ae60; font-weight: bold; }
   .titular-cell.from-manual { color: #8e44ad; font-weight: 500; }
   .titular-cell.from-manual::before { content: "✏️ "; color: #8e44ad; }
-  .titular-cell.loaded { color: #1a7a3c; font-weight: 500; }
 
   .l0 td { background: #1F3864 !important; color: white !important; font-weight: 700; font-size: 13px; }
   .l0 td a { color: #a8d1ff !important; }
@@ -81,7 +83,7 @@
   .l5 td { background: #DEEAF1; color: #2c3e50; }
 </style>
 </head>
-<body onload="cargarDatosAutomaticos()">
+<body>
 
 <div id="header">
   <div>
@@ -89,9 +91,10 @@
     <h1>🏛️ Estructura Organizativa CM</h1>
   </div>
   <div class="toolbar">
-    <button class="btn btn-collapse" onclick="collapseAll()">⊟ Colapsar todo</button>
-    <button class="btn btn-collapse" onclick="expandAll()">⊞ Expandir todo</button>
-    <button class="btn btn-export" onclick="exportExcel()">📥 Exportar Excel</button>
+    <button class="btn btn-collapse" onclick="window.collapseAll()">⊟ Colapsar todo</button>
+    <button class="btn btn-collapse" onclick="window.expandAll()">⊞ Expandir todo</button>
+    <button id="btn-export" class="btn btn-export" onclick="window.exportExcel()">📥 Exportar Excel</button>
+    <button id="btn-admin" class="btn" onclick="window.toggleAdmin()">🔒 Acceso Administración</button>
   </div>
 </div>
 
@@ -99,27 +102,27 @@
   <span id="status-text">⏳ Conectando a la base de datos...</span>
   <span id="stats">
     <span>Total: <b id="stat-total">0</b></span>
-    <span>URLs Enlazadas: <b id="stat-urls">0</b></span>
+    <span id="stat-urls-container">URLs Enlazadas: <b id="stat-urls">0</b></span>
     <span>Titulares: <b id="stat-titulares">0</b></span>
   </span>
 </div>
 
 <div id="filters">
-  <input id="search-box" type="text" placeholder="🔍 Buscar unidad o titular..." oninput="filterRows()">
+  <input id="search-box" type="text" placeholder="🔍 Buscar unidad o titular..." oninput="window.filterRows()">
   <div id="type-filters">
-    <span class="filter-chip active" onclick="setTypeFilter(this,'all')">Todos</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'Consejería')">Consejería</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'Viceconsejería')">Viceconsejería</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'Dirección General')">Dirección General</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'Subdirección')">Subdirección</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'División')">División</span>
-    <span class="filter-chip" onclick="setTypeFilter(this,'Área')">Área</span>
+    <span class="filter-chip active" onclick="window.setTypeFilter(this,'all')">Todos</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'Consejería')">Consejería</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'Viceconsejería')">Viceconsejería</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'Dirección General')">Dirección General</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'Subdirección')">Subdirección</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'División')">División</span>
+    <span class="filter-chip" onclick="window.setTypeFilter(this,'Área')">Área</span>
   </div>
   <span id="visible-counter">Mostrando: <b>0</b> resultados</span>
 </div>
 
 <div id="info-box">
-  💡 <strong>Truco:</strong> Si ves un punto Rojo o Naranja pero tú conoces el enlace correcto, <strong>haz clic sobre el punto</strong> para corregir la URL a mano y ponerlo en Verde.
+  💡 <strong>Modo Administrador Activo:</strong> Haz clic sobre cualquier punto Rojo o Naranja para corregir la URL a mano y guardarla en la nube para todos los usuarios.
 </div>
 
 <div id="table-wrap">
@@ -138,227 +141,356 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script>
-const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
-let DATA = []; 
-const state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
-const rows = [];
 
-async function cargarDatosAutomaticos() {
-  const statusEl = document.getElementById('status-text');
-  try {
-    // Evitar el cacheo añadiendo un timestamp aleatorio a la petición
-    const response = await fetch('data.json?v=' + new Date().getTime());
-    if (!response.ok) throw new Error('Archivo no encontrado');
-    
-    DATA = await response.json();
-    init();
-    
-    statusEl.innerHTML = `✅ Base de datos conectada.`;
-  } catch (err) {
-    statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'. Asegúrate de que está en la misma carpeta.`;
-  }
-}
+<script type="module">
+  // =========================================================
+  // LIBRERÍAS DE FIREBASE
+  // =========================================================
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+  import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-function normalizarTexto(texto) {
-    if (!texto) return "";
-    return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
-}
+  // =========================================================
+  // 🔴 ATENCIÓN: PEGA AQUÍ LA CONFIGURACIÓN DE TU FIREBASE
+  // =========================================================
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
-function init() {
-  const tbody = document.getElementById('tbody');
-  tbody.innerHTML = '';
-  rows.length = 0;
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
+  authDomain: "transparencia-1c0eb.firebaseapp.com",
+  projectId: "transparencia-1c0eb",
+  storageBucket: "transparencia-1c0eb.firebasestorage.app",
+  messagingSenderId: "49597373021",
+  appId: "1:49597373021:web:7ae680a7f76b8dcdd20bb4"
+};
 
-  // Filtro
-  DATA = DATA.filter(item => {
-      const nombreUnidad = normalizarTexto(item[2] || "");
-      return !nombreUnidad.includes("otras entidades del sector");
-  });
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
 
-  DATA.forEach((item, i) => {
-    const tr = construirFila(item, i);
-    tbody.appendChild(tr);
-    rows.push({tr, level: item[0], i, name: item[2], titular: item[3]});
-  });
+  window.DATA = []; 
+  window.state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
+  window.rows = [];
+  window.isAdmin = false; 
 
-  applyVisibility();
-  actualizarContadoresGlobales();
-}
+  const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
 
-function construirFila(item, i) {
-  const [level, tipo, name, titular, slug, urlStatus, titularSource] = item;
-  const url = slug ? (BASE + slug) : '#';
-  const lvl = level > 5 ? 5 : level;
-  const COLORS = {0:'#1F3864',1:'#2E75B6',2:'#4472C4',3:'#8FAADC',4:'#BDD7EE',5:'#DEEAF1'};
-
-  const tr = document.createElement('tr');
-  tr.className = `row-data l${lvl}`;
-  tr.id = 'r' + i;
-
-  const nextItem = DATA[i+1];
-  const hasKids = nextItem && nextItem[0] > level;
-  if (state.expanded[i] === undefined) state.expanded[i] = level < 2;
-
-  const indent = level * 16;
-
-  let statusCls = 'unknown', statusTitle = 'Sin URL';
-  if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL verificada (Clic para editar)'; }
-  else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada en la web (Clic para fijar a mano)'; }
-  else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada (Clic para fijar a mano)'; }
-
-  const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titularSource === 'manual' ? 'from-manual' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : ''));
-  const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
-
-  tr.innerHTML = `
-    <td><button class="toggle-btn" id="tb${i}" onclick="toggleRow(${i})">${hasKids ? (state.expanded[i]?'−':'+') : ' '}</button></td>
-    <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
-    <td><div class="name-cell" style="padding-left:${indent}px">
-      <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
-      <span class="url-status ${statusCls}" title="${statusTitle}" onclick="editarURL(${i})"></span>
-    </div></td>
-    <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
-    <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
-  `;
-  return tr;
-}
-
-// FUNCION DE EDICIÓN MANUAL
-function editarURL(idx) {
-  const item = DATA[idx];
-  const currentSlug = item[4] || '';
-  const currentUrl = currentSlug ? (BASE + currentSlug) : BASE;
-
-  const mensaje = `✏️ MODO EDICIÓN MANUAL\n\nEstás editando el enlace de:\n"${item[2]}"\n\nPega aquí la URL completa que has encontrado en internet para forzar el semáforo a VERDE:`;
-  const nuevaUrl = prompt(mensaje, currentUrl);
-
-  if (nuevaUrl !== null) { 
-    let nuevoSlug = currentSlug;
-
-    if (nuevaUrl.includes('/transparencia/unidad-organizativa-responsable/')) {
-       nuevoSlug = nuevaUrl.split('/transparencia/unidad-organizativa-responsable/')[1].trim();
-    } else if (nuevaUrl.trim() !== '' && !nuevaUrl.includes('http')) {
-       nuevoSlug = nuevaUrl.trim(); 
-    }
-
-    if (nuevoSlug) {
-        DATA[idx][4] = nuevoSlug;
-        DATA[idx][5] = 'verified';
-        
-        // Titular manual
-        if(!item[3] || item[3] === '') {
-            const nuevoTitular = prompt(`¿Quieres añadir también el nombre del Titular/Responsable? (Déjalo en blanco si no lo sabes)`);
-            if(nuevoTitular) {
-                DATA[idx][3] = nuevoTitular.trim();
-                DATA[idx][6] = 'manual';
-            }
-        }
-
-        actualizarFila(idx);
-        actualizarContadoresGlobales();
-
-        document.getElementById('info-box').innerHTML = `✅ <strong>¡Actualizado!</strong> El semáforo de "${item[2]}" ya está en Verde. Dale a 📥 Exportar Excel para guardar los cambios en tu PC.`;
-        document.getElementById('info-box').style.background = '#eafbf1';
-        document.getElementById('info-box').style.borderColor = '#27ae60';
-    }
-  }
-}
-
-function actualizarContadoresGlobales() {
-    document.getElementById('stat-total').textContent = DATA.length;
-    document.getElementById('stat-urls').textContent = DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
-    document.getElementById('stat-titulares').textContent = DATA.filter(d => d[3] && d[3] !== '').length;
-}
-
-function actualizarFila(idx) {
-  const item = DATA[idx];
-  if (!item) return;
-  const oldTr = document.getElementById('r' + idx);
-  if (!oldTr) return;
-  const newTr = construirFila(item, idx);
-  oldTr.parentNode.replaceChild(newTr, oldTr);
-  if (rows[idx]) {
-    rows[idx].tr = newTr;
-    rows[idx].titular = item[3];
-  }
-}
-
-function escapeHtml(s) {
-  if (s == null) return '';
-  return s.toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-}
-
-function applyVisibility() {
-  const tf = state.typeFilter; 
-  const q = normalizarTexto(state.searchQuery);
-  let countVisible = 0;
-  
-  for (let i = 0; i < rows.length; i++) {
-    const {tr, level, name, titular} = rows[i];
-    let visible = true;
-    
-    if (tf === 'all' && !q) {
-        let parentLevel = level - 1;
-        for (let j = i - 1; j >= 0 && parentLevel >= 0; j--) {
-          if (rows[j].level === parentLevel) {
-            if (!state.expanded[j]) { visible = false; break; }
-            parentLevel--;
-          }
-        }
+  // Control de sesión
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      window.isAdmin = true;
+      document.getElementById('btn-admin').textContent = '🔓 Cerrar Sesión';
+      document.getElementById('btn-admin').style.background = '#e74c3c';
+      document.getElementById('info-box').style.display = 'block';
+      document.getElementById('btn-export').style.display = 'inline-flex';
     } else {
-        if (tf !== 'all') {
-            const nombreNormalizado = normalizarTexto(name);       
-            const botonNormalizado = normalizarTexto(tf);          
-            if (!nombreNormalizado.startsWith(botonNormalizado)) visible = false;
-        }
+      window.isAdmin = false;
+      document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
+      document.getElementById('btn-admin').style.background = '#34495e';
+      document.getElementById('info-box').style.display = 'none';
+      document.getElementById('btn-export').style.display = 'none';
     }
     
-    if (visible && q) {
-        const textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular);
-        if (!textToSearch.includes(q)) visible = false;
-    }
-    
-    tr.style.display = visible ? '' : 'none';
-    if (visible) countVisible++;
-  }
-  
-  document.getElementById('visible-counter').innerHTML = `Mostrando: <b>${countVisible}</b> resultados`;
-}
-
-function toggleRow(i) { state.expanded[i] = !state.expanded[i]; document.getElementById('tb' + i).textContent = state.expanded[i] ? '−' : '+'; applyVisibility(); }
-function setTypeFilter(el, type) { state.typeFilter = type; document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyVisibility(); }
-function filterRows() { state.searchQuery = document.getElementById('search-box').value; applyVisibility(); }
-function collapseAll() { rows.forEach((_,i) => { state.expanded[i] = false; const b=document.getElementById('tb'+i); if(b)b.textContent='+'; }); applyVisibility(); }
-function expandAll() { rows.forEach((_,i) => { state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
-
-function exportExcel() {
-  if (!DATA.length) { alert('Los datos aún no se han cargado.'); return; }
-  const wb = XLSX.utils.book_new();
-  const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'Origen Titular', 'URL Oficial', 'Estado URL']];
-  
-  DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
-    let estadoTexto = urlStatus === 'verified' || urlStatus === '✓ Verificada' ? '✓ Verificada' : '✗ No encontrada';
-    if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') estadoTexto = '⚠ Estimada';
-    
-    let origen = '';
-    if(titularSource === 'crawl') origen = 'Araña Web';
-    if(titularSource === 'manual') origen = 'Manual';
-    if(titularSource === 'xml') origen = 'XML';
-
-    wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', estadoTexto]);
+    if (window.DATA.length > 0) init(); // Repintar tabla si la sesión cambia
   });
-  
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:12},{wch:85},{wch:15}];
-  
-  for (let r = 2; r <= wsData.length; r++) {
-    const url = wsData[r - 1][5];
-    if (url) XLSX.utils.cell_add_comment(ws[XLSX.utils.encode_cell({ c: 5, r: r - 1 })], 'Enlace web', 'Portal');
+
+  window.toggleAdmin = async function() {
+    if (window.isAdmin) {
+      await signOut(auth);
+    } else {
+      const email = prompt("✉️ Email de administrador:");
+      if (!email) return;
+      const pwd = prompt("🔑 Contraseña:");
+      if (!pwd) return;
+      
+      try {
+        await signInWithEmailAndPassword(auth, email, pwd);
+      } catch (error) {
+        alert("❌ Credenciales incorrectas o error de conexión.");
+      }
+    }
   }
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
-  XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
-}
+  // =========================================================
+  // CARGA DE DATOS: JSON + FIRESTORE (MAGIA)
+  // =========================================================
+  async function cargarDatosAutomaticos() {
+    const statusEl = document.getElementById('status-text');
+    try {
+      // 1. Cargar el JSON gigante que sacaste del Python
+      const response = await fetch('data.json?v=' + new Date().getTime());
+      if (!response.ok) throw new Error('Archivo no encontrado');
+      window.DATA = await response.json();
+
+      // 2. Cargar las correcciones manuales de Firestore
+      try {
+        const querySnapshot = await getDocs(collection(db, "correcciones"));
+        const correccionesNube = {};
+        
+        querySnapshot.forEach((doc) => {
+          correccionesNube[doc.id] = doc.data(); 
+        });
+
+        // 3. Sobreescribir el JSON con los datos de la Nube
+        window.DATA.forEach(item => {
+          // Usamos el nombre de la unidad limpiado como ID (evita problemas con barras)
+          const docId = item[2].replace(/\//g, '-'); 
+          
+          if (correccionesNube[docId]) {
+            item[4] = correccionesNube[docId].slug;
+            item[5] = 'verified'; // Lo forzamos a verde
+            if (correccionesNube[docId].titular) {
+              item[3] = correccionesNube[docId].titular;
+            }
+            item[6] = 'manual';
+          }
+        });
+
+        statusEl.innerHTML = `✅ JSON y Nube sincronizados correctamente.`;
+      } catch(e) {
+        console.warn("No se pudo conectar a Firestore, se mostrará solo el JSON.", e);
+        statusEl.innerHTML = `✅ JSON cargado (Modo local, sin nube).`;
+      }
+
+      init();
+    } catch (err) {
+      statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'.`;
+    }
+  }
+
+  function normalizarTexto(texto) {
+      if (!texto) return "";
+      return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
+  }
+
+  function init() {
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    window.rows.length = 0;
+
+    window.DATA = window.DATA.filter(item => {
+        const nombreUnidad = normalizarTexto(item[2] || "");
+        return !nombreUnidad.includes("otras entidades del sector");
+    });
+
+    window.DATA.forEach((item, i) => {
+      const tr = construirFila(item, i);
+      tbody.appendChild(tr);
+      window.rows.push({tr, level: item[0], i, name: item[2], titular: item[3]});
+    });
+
+    applyVisibility();
+    actualizarContadoresGlobales();
+  }
+
+  function construirFila(item, i) {
+    const [level, tipo, name, titular, slug, urlStatus, titularSource] = item;
+    const url = slug ? (BASE + slug) : '#';
+    const lvl = level > 5 ? 5 : level;
+    const COLORS = {0:'#1F3864',1:'#2E75B6',2:'#4472C4',3:'#8FAADC',4:'#BDD7EE',5:'#DEEAF1'};
+
+    const tr = document.createElement('tr');
+    tr.className = `row-data l${lvl}`;
+    tr.id = 'r' + i;
+
+    const nextItem = window.DATA[i+1];
+    const hasKids = nextItem && nextItem[0] > level;
+    if (window.state.expanded[i] === undefined) window.state.expanded[i] = level < 2;
+
+    const indent = level * 16;
+
+    let dotHtml = '';
+    
+    // Si eres Admin, pintamos la bolita interactiva
+    if (window.isAdmin) {
+        let statusCls = 'unknown', statusTitle = 'Sin URL';
+        if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL verificada en Nube/JSON (Clic para editar)'; }
+        else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada (Clic para arreglar a mano)'; }
+        else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada (Clic para arreglar a mano)'; }
+        
+        dotHtml = `<span class="url-status ${statusCls}" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
+    }
+
+    const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titularSource === 'manual' ? 'from-manual' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : ''));
+    const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
+
+    tr.innerHTML = `
+      <td><button class="toggle-btn" id="tb${i}" onclick="window.toggleRow(${i})">${hasKids ? (window.state.expanded[i]?'−':'+') : ' '}</button></td>
+      <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
+      <td><div class="name-cell" style="padding-left:${indent}px">
+        <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
+        ${dotHtml} 
+      </div></td>
+      <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
+      <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
+    `;
+    return tr;
+  }
+
+  // =========================================================
+  // GUARDADO EN FIRESTORE
+  // =========================================================
+  window.editarURL = async function(idx) {
+    if(!window.isAdmin) return;
+
+    const item = window.DATA[idx];
+    const currentSlug = item[4] || '';
+    const currentUrl = currentSlug ? (BASE + currentSlug) : BASE;
+
+    const mensaje = `✏️ GUARDAR EN LA NUBE\n\nEstás editando:\n"${item[2]}"\n\nPega aquí la URL correcta:`;
+    const nuevaUrl = prompt(mensaje, currentUrl);
+
+    if (nuevaUrl !== null) { 
+      let nuevoSlug = currentSlug;
+
+      if (nuevaUrl.includes('/transparencia/unidad-organizativa-responsable/')) {
+         nuevoSlug = nuevaUrl.split('/transparencia/unidad-organizativa-responsable/')[1].trim();
+      } else if (nuevaUrl.trim() !== '' && !nuevaUrl.includes('http')) {
+         nuevoSlug = nuevaUrl.trim(); 
+      }
+
+      if (nuevoSlug) {
+          let finalTitular = item[3];
+          if(!finalTitular || finalTitular === '') {
+              const nuevoTitular = prompt(`¿Quieres añadir también el nombre del Titular/Responsable?`);
+              if(nuevoTitular) {
+                  finalTitular = nuevoTitular.trim();
+              }
+          }
+
+          // Actualizamos los datos en memoria para que se pinte en verde de inmediato
+          window.DATA[idx][4] = nuevoSlug;
+          window.DATA[idx][5] = 'verified';
+          window.DATA[idx][3] = finalTitular;
+          window.DATA[idx][6] = 'manual';
+
+          // MANDAR A FIREBASE
+          try {
+              document.getElementById('info-box').innerHTML = `⏳ Guardando en la nube...`;
+              const docId = item[2].replace(/\//g, '-'); // Sanitizamos el nombre
+              const docRef = doc(db, "correcciones", docId);
+              
+              await setDoc(docRef, {
+                  slug: nuevoSlug,
+                  titular: finalTitular
+              });
+
+              actualizarFila(idx);
+              actualizarContadoresGlobales();
+
+              document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado en la Nube!</strong> "${item[2]}" aparecerá en Verde para todos los usuarios automáticamente.`;
+              document.getElementById('info-box').style.background = '#eafbf1';
+              document.getElementById('info-box').style.borderColor = '#27ae60';
+          } catch(e) {
+              alert("❌ Error al guardar en Firebase. Revisa los permisos de tu base de datos.\nDetalle: " + e.message);
+          }
+      }
+    }
+  }
+
+  function actualizarContadoresGlobales() {
+      document.getElementById('stat-total').textContent = window.DATA.length;
+      document.getElementById('stat-urls').textContent = window.DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
+      document.getElementById('stat-titulares').textContent = window.DATA.filter(d => d[3] && d[3] !== '').length;
+  }
+
+  function actualizarFila(idx) {
+    const item = window.DATA[idx];
+    if (!item) return;
+    const oldTr = document.getElementById('r' + idx);
+    if (!oldTr) return;
+    const newTr = construirFila(item, idx);
+    oldTr.parentNode.replaceChild(newTr, oldTr);
+    if (window.rows[idx]) {
+      window.rows[idx].tr = newTr;
+      window.rows[idx].titular = item[3];
+    }
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return s.toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
+
+  function applyVisibility() {
+    const tf = window.state.typeFilter; 
+    const q = normalizarTexto(window.state.searchQuery);
+    let countVisible = 0;
+    
+    for (let i = 0; i < window.rows.length; i++) {
+      const {tr, level, name, titular} = window.rows[i];
+      let visible = true;
+      
+      if (tf === 'all' && !q) {
+          let parentLevel = level - 1;
+          for (let j = i - 1; j >= 0 && parentLevel >= 0; j--) {
+            if (window.rows[j].level === parentLevel) {
+              if (!window.state.expanded[j]) { visible = false; break; }
+              parentLevel--;
+            }
+          }
+      } else {
+          if (tf !== 'all') {
+              const nombreNormalizado = normalizarTexto(name);       
+              const botonNormalizado = normalizarTexto(tf);          
+              if (!nombreNormalizado.startsWith(botonNormalizado)) visible = false;
+          }
+      }
+      
+      if (visible && q) {
+          const textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular);
+          if (!textToSearch.includes(q)) visible = false;
+      }
+      
+      tr.style.display = visible ? '' : 'none';
+      if (visible) countVisible++;
+    }
+    
+    document.getElementById('visible-counter').innerHTML = `Mostrando: <b>${countVisible}</b> resultados`;
+  }
+
+  window.toggleRow = function(i) { window.state.expanded[i] = !window.state.expanded[i]; document.getElementById('tb' + i).textContent = window.state.expanded[i] ? '−' : '+'; applyVisibility(); }
+  window.setTypeFilter = function(el, type) { window.state.typeFilter = type; document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyVisibility(); }
+  window.filterRows = function() { window.state.searchQuery = document.getElementById('search-box').value; applyVisibility(); }
+  window.collapseAll = function() { window.rows.forEach((_,i) => { window.state.expanded[i] = false; const b=document.getElementById('tb'+i); if(b)b.textContent='+'; }); applyVisibility(); }
+  window.expandAll = function() { window.rows.forEach((_,i) => { window.state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
+
+  window.exportExcel = function() {
+    if (!window.DATA.length) { alert('Los datos aún no se han cargado.'); return; }
+    const wb = XLSX.utils.book_new();
+    const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'Origen Titular', 'URL Oficial', 'Estado URL']];
+    
+    window.DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
+      let estadoTexto = urlStatus === 'verified' || urlStatus === '✓ Verificada' ? '✓ Verificada' : '✗ No encontrada';
+      if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') estadoTexto = '⚠ Estimada';
+      
+      let origen = '';
+      if(titularSource === 'crawl') origen = 'Araña Web';
+      if(titularSource === 'manual') origen = 'Nube / Manual';
+      if(titularSource === 'xml') origen = 'XML';
+
+      wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', estadoTexto]);
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:12},{wch:85},{wch:15}];
+    
+    for (let r = 2; r <= wsData.length; r++) {
+      const url = wsData[r - 1][5];
+      if (url) XLSX.utils.cell_add_comment(ws[XLSX.utils.encode_cell({ c: 5, r: r - 1 })], 'Enlace web', 'Portal');
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
+    XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
+  }
+
+  // Se inicia la carga de datos (JSON + Firestore) al arrancar la página
+  window.onload = cargarDatosAutomaticos;
+
 </script>
 </body>
 </html>
