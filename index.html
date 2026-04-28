@@ -62,16 +62,11 @@
   .url-status.is-admin { cursor: pointer; }
   .url-status.is-admin:hover { transform: scale(1.8); }
   .url-status.verified { background: #27ae60; box-shadow: 0 0 0 1px #fff; }
-  .url-status.failed   { background: #c0392b; box-shadow: 0 0 0 1px #fff; }
-  .url-status.guessed  { background: #e67e22; box-shadow: 0 0 0 1px #fff; }
 
   .tipo-badge { font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: 600; white-space: nowrap; letter-spacing: 0.5px; }
 
+  /* Estilo uniforme para todos los titulares */
   .titular-cell { color: #2c3e50; }
-  .titular-cell.from-crawl { color: #1a7a3c; font-weight: 500; }
-  .titular-cell.from-crawl::before { content: "✓ "; color: #27ae60; font-weight: bold; }
-  .titular-cell.from-manual { color: #8e44ad; font-weight: 500; }
-  .titular-cell.from-manual::before { content: "✏️ "; color: #8e44ad; }
 
   .l0 td { background: #1F3864 !important; color: white !important; font-weight: 700; font-size: 13px; }
   .l0 td a { color: #a8d1ff !important; }
@@ -88,7 +83,7 @@
 
 <div id="header">
   <div>
-    <div class="subtitle">Herramienta de Consulta Profesional</div>
+    <div class="subtitle">Herramienta de Consulta Oficial</div>
     <h1>🏛️ Estructura Organizativa CM</h1>
   </div>
   <div class="toolbar">
@@ -102,8 +97,7 @@
 <div id="status-bar">
   <span id="status-text">⏳ Conectando a la base de datos...</span>
   <span id="stats">
-    <span>Total: <b id="stat-total">0</b></span>
-    <span id="stat-urls-container">URLs Enlazadas: <b id="stat-urls">0</b></span>
+    <span>Unidades Publicadas: <b id="stat-total">0</b></span>
     <span>Titulares: <b id="stat-titulares">0</b></span>
   </span>
 </div>
@@ -123,7 +117,7 @@
 </div>
 
 <div id="info-box">
-  💡 <strong>Modo Administrador Activo:</strong> Haz clic sobre cualquier punto Rojo o Naranja para corregir la URL a mano y guardarla en la nube para todos los usuarios.
+  💡 <strong>Modo Administrador Activo:</strong> Haz clic sobre cualquier punto verde para corregir la URL a mano y guardarla en la nube para todos los usuarios.
 </div>
 
 <div id="table-wrap">
@@ -149,7 +143,7 @@
   import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
   // =========================================================
-  // 🔴 CONFIGURACIÓN FIREBASE (Pon tus datos cuando los tengas)
+  // 🔴 CONFIGURACIÓN FIREBASE (Pon tus claves aquí)
   // =========================================================
   const firebaseConfig = {
   apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
@@ -160,7 +154,6 @@
   appId: "1:49597373021:web:7ae680a7f76b8dcdd20bb4"
   };
 
-  // Variables globales
   window.DATA = []; 
   window.state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
   window.rows = [];
@@ -170,7 +163,6 @@
   let auth = null;
   let db = null;
 
-  // 1. INICIALIZAR FIREBASE (CON PROTECCIÓN ANTI-CUELGUE)
   try {
       if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI_API_KEY") {
           const app = initializeApp(firebaseConfig);
@@ -191,19 +183,18 @@
               document.getElementById('info-box').style.display = 'none';
               document.getElementById('btn-export').style.display = 'none';
             }
-            if (window.DATA.length > 0) init(); // Repintamos la tabla si cambia el usuario
+            if (window.DATA.length > 0) init(); 
           });
       } else {
           console.warn("ℹ️ Firebase no configurado. La web funcionará en Modo Visor Local.");
       }
   } catch (error) {
-      console.warn("ℹ️ No se pudo iniciar Firebase (Probablemente archivo abierto en local file://).", error);
+      console.warn("ℹ️ No se pudo iniciar Firebase.", error);
   }
 
-  // 2. FUNCIÓN DE LOGIN
   window.toggleAdmin = async function() {
     if (!auth) {
-        alert("❌ Opciones de Administrador desactivadas.\nMotivo: Faltan las claves de Firebase en el código o estás abriendo el archivo en local.");
+        alert("❌ Opciones de Administrador desactivadas.\nMotivo: Faltan las claves de Firebase.");
         return;
     }
 
@@ -218,21 +209,18 @@
       try {
         await signInWithEmailAndPassword(auth, email, pwd);
       } catch (error) {
-        alert("❌ Credenciales incorrectas o error de conexión a la nube.");
+        alert("❌ Credenciales incorrectas.");
       }
     }
   }
 
-  // 3. CARGA PRINCIPAL (A PRUEBA DE BOMBAS)
   window.cargarDatosAutomaticos = async function() {
     const statusEl = document.getElementById('status-text');
     try {
-      // Cargamos el JSON SÍ O SÍ
       const response = await fetch('data.json?v=' + new Date().getTime());
       if (!response.ok) throw new Error('Archivo data.json no encontrado');
       window.DATA = await response.json();
 
-      // Si existe conexión a BD, cruzamos datos. Si no, seguimos sin inmutarnos.
       if (db) {
           try {
             const querySnapshot = await getDocs(collection(db, "correcciones"));
@@ -242,18 +230,18 @@
             window.DATA.forEach(item => {
               const docId = item[2].replace(/\//g, '-'); 
               if (correccionesNube[docId]) {
-                item[4] = correccionesNube[docId].slug;
-                item[5] = 'verified';
-                if (correccionesNube[docId].titular) item[3] = correccionesNube[docId].titular;
-                item[6] = 'manual';
+                  item[4] = correccionesNube[docId].slug;
+                  item[5] = 'verified'; 
+                  if (correccionesNube[docId].titular) item[3] = correccionesNube[docId].titular;
+                  item[6] = 'manual';
               }
             });
-            statusEl.innerHTML = `✅ JSON y Nube sincronizados correctamente.`;
+            statusEl.innerHTML = `✅ JSON y Nube sincronizados.`;
           } catch(e) {
-            statusEl.innerHTML = `✅ JSON cargado (Modo visor).`;
+            statusEl.innerHTML = `✅ JSON cargado.`;
           }
       } else {
-          statusEl.innerHTML = `✅ JSON cargado (Modo visor).`;
+          statusEl.innerHTML = `✅ JSON cargado.`;
       }
       init();
     } catch (err) {
@@ -271,9 +259,13 @@
     tbody.innerHTML = '';
     window.rows.length = 0;
 
+    // Filtro para unidades reales
     window.DATA = window.DATA.filter(item => {
         const nombreUnidad = normalizarTexto(item[2] || "");
-        return !nombreUnidad.includes("otras entidades del sector");
+        const esEntidadExcluida = nombreUnidad.includes("otras entidades del sector");
+        const estaEnElPortal = (item[5] === 'verified' || item[5] === '✓ Verificada');
+        
+        return !esEntidadExcluida && estaEnElPortal;
     });
 
     window.DATA.forEach((item, i) => {
@@ -298,20 +290,20 @@
 
     const nextItem = window.DATA[i+1];
     const hasKids = nextItem && nextItem[0] > level;
-    if (window.state.expanded[i] === undefined) window.state.expanded[i] = level < 2;
+    
+    // Expandido por defecto
+    if (window.state.expanded[i] === undefined) window.state.expanded[i] = true;
 
     const indent = level * 16;
 
-    let statusCls = 'unknown', statusTitle = 'Sin URL';
-    if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL enlazada'; }
-    else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada en la web'; }
-    else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada'; }
-    
-    // Si es admin, añadimos la clase que pone el cursor "manita" y permite el clic
-    const adminClass = window.isAdmin ? "is-admin" : "";
-    const dotHtml = `<span class="url-status ${statusCls} ${adminClass}" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
+    // MAGIA DE LOS SEMÁFOROS: Solo existen si eres Administrador
+    let dotHtml = '';
+    if (window.isAdmin) {
+        const statusTitle = '✓ URL enlazada en el portal (Clic para editar)';
+        dotHtml = `<span class="url-status verified is-admin" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
+    }
 
-    const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titularSource === 'manual' ? 'from-manual' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : ''));
+    // MAGIA DE LOS TITULARES: Todos limpios y uniformes, sin importar su origen
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
 
     tr.innerHTML = `
@@ -319,17 +311,16 @@
       <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
       <td><div class="name-cell" style="padding-left:${indent}px">
         <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
-        ${dotHtml} 
+        ${dotHtml}
       </div></td>
-      <td class="titular-cell ${titularCls}">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
+      <td class="titular-cell">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
       <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
     `;
     return tr;
   }
 
-  // 4. GUARDADO DE DATOS (Solo funciona si eres Admin)
   window.editarURL = async function(idx) {
-    if(!window.isAdmin) return; // Visitantes no hacen nada al hacer clic
+    if(!window.isAdmin) return; 
 
     const item = window.DATA[idx];
     const currentSlug = item[4] || '';
@@ -359,20 +350,19 @@
           window.DATA[idx][3] = finalTitular;
           window.DATA[idx][6] = 'manual';
 
-          // Intentamos mandar a la nube
           if (db) {
               try {
                   document.getElementById('info-box').innerHTML = `⏳ Guardando en la nube...`;
                   const docId = item[2].replace(/\//g, '-'); 
                   const docRef = doc(db, "correcciones", docId);
                   
-                  await setDoc(docRef, { slug: nuevoSlug, titular: finalTitular });
+                  await setDoc(docRef, { slug: nuevoSlug, titular: finalTitular }, { merge: true });
 
-                  document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado!</strong> "${item[2]}" aparecerá en Verde para todos.`;
+                  document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado!</strong> "${item[2]}" se ha actualizado.`;
                   document.getElementById('info-box').style.background = '#eafbf1';
                   document.getElementById('info-box').style.borderColor = '#27ae60';
               } catch(e) {
-                  alert("❌ Error al guardar en Firebase. Revisa los permisos de tu base de datos.\nDetalle: " + e.message);
+                  alert("❌ Error al guardar en Firebase.\nDetalle: " + e.message);
               }
           }
 
@@ -384,7 +374,6 @@
 
   function actualizarContadoresGlobales() {
       document.getElementById('stat-total').textContent = window.DATA.length;
-      document.getElementById('stat-urls').textContent = window.DATA.filter(d => d[5] === 'verified' || d[5] === '✓ Verificada').length;
       document.getElementById('stat-titulares').textContent = window.DATA.filter(d => d[3] && d[3] !== '').length;
   }
 
@@ -443,9 +432,23 @@
   }
 
   window.toggleRow = function(i) { window.state.expanded[i] = !window.state.expanded[i]; document.getElementById('tb' + i).textContent = window.state.expanded[i] ? '−' : '+'; applyVisibility(); }
-  window.setTypeFilter = function(el, type) { window.state.typeFilter = type; document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); el.classList.add('active'); applyVisibility(); }
+  
+  window.setTypeFilter = function(el, type) { 
+      window.state.typeFilter = type; 
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); 
+      el.classList.add('active'); 
+
+      if (type === 'all') {
+          window.expandAll();
+      } else {
+          applyVisibility(); 
+      }
+  }
+
   window.filterRows = function() { window.state.searchQuery = document.getElementById('search-box').value; applyVisibility(); }
+  
   window.collapseAll = function() { window.rows.forEach((_,i) => { window.state.expanded[i] = false; const b=document.getElementById('tb'+i); if(b)b.textContent='+'; }); applyVisibility(); }
+  
   window.expandAll = function() { window.rows.forEach((_,i) => { window.state.expanded[i] = true; const b=document.getElementById('tb'+i); if(b)b.textContent='−'; }); applyVisibility(); }
 
   window.exportExcel = function() {
@@ -454,15 +457,12 @@
     const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'Origen Titular', 'URL Oficial', 'Estado URL']];
     
     window.DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
-      let estadoTexto = urlStatus === 'verified' || urlStatus === '✓ Verificada' ? '✓ Verificada' : '✗ No encontrada';
-      if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') estadoTexto = '⚠ Estimada';
-      
       let origen = '';
       if(titularSource === 'crawl') origen = 'Araña Web';
       if(titularSource === 'manual') origen = 'Nube / Manual';
       if(titularSource === 'xml') origen = 'XML';
 
-      wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', estadoTexto]);
+      wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', '✓ Verificada']);
     });
     
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -472,7 +472,6 @@
     XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
   }
 
-  // Disparamos la carga al abrir
   window.onload = window.cargarDatosAutomaticos;
 
 </script>
