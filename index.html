@@ -150,15 +150,15 @@
   import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
   // =========================================================
-  // 🔴 CONFIGURACIÓN FIREBASE (Pon tus claves aquí)
+  // 🔴 CONFIGURACIÓN FIREBASE (Ya integrada)
   // =========================================================
   const firebaseConfig = {
-  apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
-  authDomain: "transparencia-1c0eb.firebaseapp.com",
-  projectId: "transparencia-1c0eb",
-  storageBucket: "transparencia-1c0eb.firebasestorage.app",
-  messagingSenderId: "49597373021",
-  appId: "1:49597373021:web:7ae680a7f76b8dcdd20bb4"
+    apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
+    authDomain: "transparencia-1c0eb.firebaseapp.com",
+    projectId: "transparencia-1c0eb",
+    storageBucket: "transparencia-1c0eb.firebasestorage.app",
+    messagingSenderId: "49597373021",
+    appId: "1:49597373021:web:7ae680a7f76b8dcdd20bb4"
   };
 
   window.DATA = []; 
@@ -168,8 +168,8 @@
   
   // VARIABLES DEL COMPARADOR
   window.modoComparador = false;
-  window.diccionarioTitulares = {}; // Criterio 1: Titular -> Cargo (Col D -> Col F)
-  window.diccionarioUnidades = {};  // Criterio 2: Unidad -> Titular (Col F -> Col D)
+  window.diccionarioTitulares = {}; 
+  window.diccionarioUnidades = {};  
 
   const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
   
@@ -177,36 +177,50 @@
   let db = null;
 
   try {
-      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI_API_KEY") {
-          const app = initializeApp(firebaseConfig);
-          auth = getAuth(app);
-          db = getFirestore(app);
+      const app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
 
-          onAuthStateChanged(auth, (user) => {
-            if (user) {
-              window.isAdmin = true;
-              document.getElementById('btn-admin').textContent = '🔓 Cerrar Sesión';
-              document.getElementById('btn-admin').style.background = '#e74c3c';
-              document.getElementById('info-box').style.display = 'block';
-              document.getElementById('btn-export').style.display = 'inline-flex';
-            } else {
-              window.isAdmin = false;
-              document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
-              document.getElementById('btn-admin').style.background = '#34495e';
-              document.getElementById('info-box').style.display = 'none';
-              document.getElementById('btn-export').style.display = 'none';
-            }
-            if (window.DATA.length > 0) init(); 
-          });
-      } else {
-          console.warn("ℹ️ Firebase no configurado. La web funcionará en Modo Visor Local.");
-      }
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          window.isAdmin = true;
+          document.getElementById('btn-admin').textContent = '🔓 Cerrar Sesión';
+          document.getElementById('btn-admin').style.background = '#e74c3c';
+          document.getElementById('info-box').style.display = 'block';
+          document.getElementById('btn-export').style.display = 'inline-flex';
+        } else {
+          window.isAdmin = false;
+          document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
+          document.getElementById('btn-admin').style.background = '#34495e';
+          document.getElementById('info-box').style.display = 'none';
+          document.getElementById('btn-export').style.display = 'none';
+        }
+        if (window.DATA.length > 0) init(); 
+      });
   } catch (error) {
       console.warn("ℹ️ No se pudo iniciar Firebase.", error);
   }
 
   // =========================================================
-  // MAGIA DEL COMPARADOR DOBLE 
+  // NORMALIZACIÓN AVANZADA: ELIMINA TILDES Y PUNTUACIÓN
+  // =========================================================
+  function normalizarTexto(texto) {
+      if (!texto) return "";
+      let t = texto.toString()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "") // Quita todas las tildes y acentos
+          .toLowerCase();
+      
+      // Quitar signos de puntuación, comas, guiones, puntos, paréntesis...
+      t = t.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ");
+      // Reducir espacios dobles a simples
+      t = t.replace(/\s{2,}/g, " ");
+      
+      return t.trim();
+  }
+
+  // =========================================================
+  // MAGIA DEL COMPARADOR DOBLE (TITULAR Y UNIDAD/AREA)
   // =========================================================
   window.cargarComparador = function(event) {
       const file = event.target.files[0];
@@ -231,23 +245,35 @@
               if (fila) { 
                   const nombre = fila[3]; // Columna D (NOMBRE)
                   const cargo = fila[5];  // Columna F (CARGO)
+                  const area = fila[6];   // Columna G (AREA) -> Vital para cruzar la Unidad
                   
-                  // REGLA 1: Guardamos el mapeo de Nombre -> Cargo
+                  // REGLA 1: Guardamos el Titular
                   if (nombre) {
                       const nombreNorm = normalizarTexto(nombre);
-                      window.diccionarioTitulares[nombreNorm] = cargo || 'Cargo no especificado';
+                      window.diccionarioTitulares[nombreNorm] = cargo || area || 'Cargo no especificado';
                       matchesCargados++;
                   }
                   
-                  // REGLA 2: Guardamos el mapeo de Cargo (Unidad) -> Nombre
+                  // REGLA 2: Guardamos la Columna F (Cargo) como identificador
                   if (cargo) {
                       const cargoNorm = normalizarTexto(cargo);
-                      // Si hay varias personas con el mismo cargo/unidad, los unimos
                       if (!window.diccionarioUnidades[cargoNorm]) {
-                          window.diccionarioUnidades[cargoNorm] = nombre || 'Sin nombre';
+                          window.diccionarioUnidades[cargoNorm] = nombre;
                       } else {
                           if (nombre && !window.diccionarioUnidades[cargoNorm].includes(nombre)) {
                               window.diccionarioUnidades[cargoNorm] += " / " + nombre;
+                          }
+                      }
+                  }
+
+                  // REGLA 3: Guardamos la Columna G (Area) como identificador (Muy útil para Direcciones/Subdirecciones)
+                  if (area) {
+                      const areaNorm = normalizarTexto(area);
+                      if (!window.diccionarioUnidades[areaNorm]) {
+                          window.diccionarioUnidades[areaNorm] = nombre;
+                      } else {
+                          if (nombre && !window.diccionarioUnidades[areaNorm].includes(nombre)) {
+                              window.diccionarioUnidades[areaNorm] += " / " + nombre;
                           }
                       }
                   }
@@ -261,7 +287,7 @@
               init(); // Repintamos la tabla
               
               const infoBox = document.getElementById('info-box');
-              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos mediante doble verificación (Titular y Unidad Organizativa).`;
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos mediante doble verificación, ignorando tildes y comas.`;
               infoBox.style.display = 'block';
               infoBox.style.background = '#f4ecf7';
               infoBox.style.borderColor = '#8e44ad';
@@ -275,10 +301,7 @@
 
 
   window.toggleAdmin = async function() {
-    if (!auth) {
-        alert("❌ Opciones de Administrador desactivadas.\nMotivo: Faltan las claves de Firebase.");
-        return;
-    }
+    if (!auth) return;
 
     if (window.isAdmin) {
       await signOut(auth);
@@ -329,11 +352,6 @@
     } catch (err) {
       statusEl.innerHTML = `❌ <b>Error fatal:</b> No se encuentra 'data.json' en la carpeta.`;
     }
-  }
-
-  function normalizarTexto(texto) {
-      if (!texto) return "";
-      return texto.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();                          
   }
 
   function init() {
@@ -393,7 +411,7 @@
         let claseFondo = '';
         let matchEncontrado = false;
 
-        // CRITERIO 1: Buscar por Titular / Persona (Col D -> Col F)
+        // CRITERIO 1: Buscar por Titular / Persona
         if (titular) {
             const titularNorm = normalizarTexto(titular);
             const cargoEncontrado = window.diccionarioTitulares[titularNorm];
@@ -405,7 +423,7 @@
             }
         }
         
-        // CRITERIO 2: Buscar por Unidad Organizativa (Col F -> Col D)
+        // CRITERIO 2: Buscar por Unidad Organizativa
         if (!matchEncontrado) {
             const unidadNorm = normalizarTexto(name);
             const titularEncontrado = window.diccionarioUnidades[unidadNorm];
