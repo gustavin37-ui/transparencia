@@ -52,6 +52,9 @@
   
   .col-nivel { width: 60px; text-align: center; }
 
+  /* CLASE MAGICA PARA OCULTAR LA COLUMNA DEL COMPARADOR */
+  .hide-comparador .col-comparador { display: none !important; }
+
   tr.row-data:hover td { filter: brightness(.96); background-color: #fafbfc; }
   td { padding: 6px 10px; border-bottom: 1px solid #e8edf3; vertical-align: middle; white-space: nowrap; }
 
@@ -127,14 +130,14 @@
 </div>
 
 <div id="table-wrap">
-<table id="org-table">
+<table id="org-table" class="hide-comparador">
   <thead>
     <tr>
       <th></th>
       <th>Tipo</th>
       <th>Unidad Organizativa</th>
       <th>Titular / Persona</th>
-      <th id="th-comparador" style="display:none; width: 280px; background:#732d91;">⚖️ Fichero Interno</th>
+      <th id="th-comparador" class="col-comparador" style="width: 280px; background:#732d91;">⚖️ Fichero Interno</th>
       <th class="col-nivel">Nv.</th>
     </tr>
   </thead>
@@ -197,9 +200,6 @@
       console.warn("ℹ️ No se pudo iniciar Firebase.", error);
   }
 
-  // =========================================================
-  // NORMALIZACIÓN BÁSICA (Tildes y Puntuación)
-  // =========================================================
   function normalizarTexto(texto) {
       if (!texto) return "";
       let t = texto.toString()
@@ -213,13 +213,9 @@
       return t.trim();
   }
 
-  // =========================================================
-  // NORMALIZACIÓN PARA CRUCE (Arranca géneros y tipos)
-  // =========================================================
   function normalizarParaCruce(texto) {
       let t = normalizarTexto(texto);
       
-      // Palabras a eliminar para que "Subdirectora" y "Subdireccion" coincidan
       const palabrasABorrar = [
           "subdireccion", "subdirector", "subdirectora",
           "direccion", "director", "directora",
@@ -228,17 +224,12 @@
           "secretaria", "secretario"
       ];
       
-      // Creamos una expresión regular que borre esas palabras enteras
       const regex = new RegExp('\\b(' + palabrasABorrar.join('|') + ')\\b', 'g');
       t = t.replace(regex, '');
       
-      // Limpiamos los espacios sobrantes que hayan quedado
       return t.replace(/\s{2,}/g, ' ').trim();
   }
 
-  // =========================================================
-  // CARGAR EXCEL/CSV
-  // =========================================================
   window.cargarComparador = function(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -261,18 +252,15 @@
               
               if (fila) { 
                   const nombre = fila[3]; // Columna D (NOMBRE)
-                  const cargo = fila[5];  // Columna F (CARGO) -> Única que miramos
+                  const cargo = fila[5];  // Columna F (CARGO)
                   
-                  // REGLA 1: Guardamos el Titular (Normal básico)
                   if (nombre) {
                       const nombreNorm = normalizarTexto(nombre);
                       window.diccionarioTitulares[nombreNorm] = cargo || 'Cargo no especificado';
                       matchesCargados++;
                   }
                   
-                  // REGLA 2: Guardamos la Columna F limpia de géneros/tipos
                   if (cargo) {
-                      // Aplicamos el limpiador potente (se come los "subdirectora", etc.)
                       const cargoNorm = normalizarParaCruce(cargo);
                       if (!window.diccionarioUnidades[cargoNorm]) {
                           window.diccionarioUnidades[cargoNorm] = nombre;
@@ -287,12 +275,10 @@
 
           if (matchesCargados > 0) {
               window.modoComparador = true;
-              document.getElementById('th-comparador').style.display = 'table-cell'; 
-              
               init(); 
               
               const infoBox = document.getElementById('info-box');
-              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos (Ignorando diferencias como Subdirectora/Subdirección).`;
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos. Usa los filtros (Subdirección, División...) para ver las diferencias.`;
               infoBox.style.display = 'block';
               infoBox.style.background = '#f4ecf7';
               infoBox.style.borderColor = '#8e44ad';
@@ -406,16 +392,13 @@
 
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
 
-    // -------------------------------------------------------------
-    // LÓGICA DEL COMPARADOR DOBLE (TITULAR Y UNIDAD LIMPIA)
-    // -------------------------------------------------------------
+    // CELDA DEL COMPARADOR (Siempre se genera, el CSS la oculta o muestra dinámicamente)
     let celdaComparadorHtml = '';
     if (window.modoComparador) {
         let textoCargo = '<span style="opacity:0.4">—</span>';
         let claseFondo = '';
         let matchEncontrado = false;
 
-        // CRITERIO 1: Buscar por Titular / Persona
         if (titular) {
             const titularNorm = normalizarTexto(titular);
             const cargoEncontrado = window.diccionarioTitulares[titularNorm];
@@ -427,7 +410,6 @@
             }
         }
         
-        // CRITERIO 2: Buscar por Unidad Organizativa (Limpiando Subdireccion/Subdirectora)
         if (!matchEncontrado) {
             const unidadNorm = normalizarParaCruce(name);
             const titularEncontrado = window.diccionarioUnidades[unidadNorm];
@@ -441,9 +423,9 @@
             }
         }
         
-        celdaComparadorHtml = `<td style="${claseFondo} white-space: normal; line-height: 1.2;">${textoCargo}</td>`;
+        // Se le añade la clase col-comparador para poder ocultarla en bloque
+        celdaComparadorHtml = `<td class="col-comparador" style="${claseFondo} white-space: normal; line-height: 1.2;">${textoCargo}</td>`;
     }
-    // -------------------------------------------------------------
 
     tr.innerHTML = `
       <td><button class="toggle-btn" id="tb${i}" onclick="window.toggleRow(${i})">${hasKids ? (window.state.expanded[i]?'−':'+') : ' '}</button></td>
@@ -526,6 +508,16 @@
     const tf = window.state.typeFilter; 
     const q = normalizarTexto(window.state.searchQuery);
     let countVisible = 0;
+
+    // LÓGICA DE OCULTACIÓN DINÁMICA DE LA COLUMNA DE COMPARACIÓN
+    const table = document.getElementById('org-table');
+    const ocultarColumna = !window.modoComparador || ['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
+    
+    if (ocultarColumna) {
+        table.classList.add('hide-comparador');
+    } else {
+        table.classList.remove('hide-comparador');
+    }
     
     for (let i = 0; i < window.rows.length; i++) {
       const {tr, level, name, titular} = window.rows[i];
@@ -591,8 +583,12 @@
     if (!window.DATA.length) { alert('Los datos aún no se han cargado.'); return; }
     const wb = XLSX.utils.book_new();
     
+    // Solo exportamos la columna si en la vista actual está activa y visible
+    const tf = window.state.typeFilter;
+    const exportarComparador = window.modoComparador && !['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
+
     const encabezados = ['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona'];
-    if(window.modoComparador) encabezados.push('Fichero Interno');
+    if(exportarComparador) encabezados.push('Fichero Interno');
     encabezados.push('Origen Titular', 'URL Oficial');
     
     const wsData = [encabezados];
@@ -605,7 +601,7 @@
 
       const fila = [level, tipo, '  '.repeat(level) + name, titular || ''];
       
-      if(window.modoComparador) {
+      if(exportarComparador) {
           const titularNorm = normalizarTexto(titular);
           const unidadNorm = normalizarParaCruce(name);
           
@@ -625,7 +621,7 @@
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     
     const anchos = [{wch:6},{wch:22},{wch:65},{wch:40}];
-    if(window.modoComparador) anchos.push({wch:45});
+    if(exportarComparador) anchos.push({wch:45});
     anchos.push({wch:12},{wch:85});
     ws['!cols'] = anchos;
     
