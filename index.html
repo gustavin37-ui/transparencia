@@ -58,8 +58,9 @@
   .name-link { color: inherit; text-decoration: none; font-weight: inherit; }
   .name-link:hover { text-decoration: underline; color: #2E75B6; }
   
-  .url-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; flex-shrink: 0; cursor: pointer; transition: transform 0.2s; }
-  .url-status:hover { transform: scale(1.8); }
+  .url-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; flex-shrink: 0; transition: transform 0.2s; }
+  .url-status.is-admin { cursor: pointer; }
+  .url-status.is-admin:hover { transform: scale(1.8); }
   .url-status.verified { background: #27ae60; box-shadow: 0 0 0 1px #fff; }
   .url-status.failed   { background: #c0392b; box-shadow: 0 0 0 1px #fff; }
   .url-status.guessed  { background: #e67e22; box-shadow: 0 0 0 1px #fff; }
@@ -143,62 +144,69 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="module">
-  // =========================================================
-  // LIBRERÍAS DE FIREBASE
-  // =========================================================
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
   import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
   // =========================================================
-  // 🔴 ATENCIÓN: PEGA AQUÍ LA CONFIGURACIÓN DE TU FIREBASE
+  // 🔴 CONFIGURACIÓN FIREBASE (Pon tus datos cuando los tengas)
   // =========================================================
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
+  const firebaseConfig = {
   apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
   authDomain: "transparencia-1c0eb.firebaseapp.com",
   projectId: "transparencia-1c0eb",
   storageBucket: "transparencia-1c0eb.firebasestorage.app",
   messagingSenderId: "49597373021",
   appId: "1:49597373021:web:7ae680a7f76b8dcdd20bb4"
-};
+  };
 
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
+  // Variables globales
   window.DATA = []; 
   window.state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
   window.rows = [];
   window.isAdmin = false; 
-
   const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
+  
+  let auth = null;
+  let db = null;
 
-  // Control de sesión
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      window.isAdmin = true;
-      document.getElementById('btn-admin').textContent = '🔓 Cerrar Sesión';
-      document.getElementById('btn-admin').style.background = '#e74c3c';
-      document.getElementById('info-box').style.display = 'block';
-      document.getElementById('btn-export').style.display = 'inline-flex';
-    } else {
-      window.isAdmin = false;
-      document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
-      document.getElementById('btn-admin').style.background = '#34495e';
-      document.getElementById('info-box').style.display = 'none';
-      document.getElementById('btn-export').style.display = 'none';
-    }
-    
-    if (window.DATA.length > 0) init(); // Repintar tabla si la sesión cambia
-  });
+  // 1. INICIALIZAR FIREBASE (CON PROTECCIÓN ANTI-CUELGUE)
+  try {
+      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI_API_KEY") {
+          const app = initializeApp(firebaseConfig);
+          auth = getAuth(app);
+          db = getFirestore(app);
 
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              window.isAdmin = true;
+              document.getElementById('btn-admin').textContent = '🔓 Cerrar Sesión';
+              document.getElementById('btn-admin').style.background = '#e74c3c';
+              document.getElementById('info-box').style.display = 'block';
+              document.getElementById('btn-export').style.display = 'inline-flex';
+            } else {
+              window.isAdmin = false;
+              document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
+              document.getElementById('btn-admin').style.background = '#34495e';
+              document.getElementById('info-box').style.display = 'none';
+              document.getElementById('btn-export').style.display = 'none';
+            }
+            if (window.DATA.length > 0) init(); // Repintamos la tabla si cambia el usuario
+          });
+      } else {
+          console.warn("ℹ️ Firebase no configurado. La web funcionará en Modo Visor Local.");
+      }
+  } catch (error) {
+      console.warn("ℹ️ No se pudo iniciar Firebase (Probablemente archivo abierto en local file://).", error);
+  }
+
+  // 2. FUNCIÓN DE LOGIN
   window.toggleAdmin = async function() {
+    if (!auth) {
+        alert("❌ Opciones de Administrador desactivadas.\nMotivo: Faltan las claves de Firebase en el código o estás abriendo el archivo en local.");
+        return;
+    }
+
     if (window.isAdmin) {
       await signOut(auth);
     } else {
@@ -210,55 +218,46 @@ const firebaseConfig = {
       try {
         await signInWithEmailAndPassword(auth, email, pwd);
       } catch (error) {
-        alert("❌ Credenciales incorrectas o error de conexión.");
+        alert("❌ Credenciales incorrectas o error de conexión a la nube.");
       }
     }
   }
 
-  // =========================================================
-  // CARGA DE DATOS: JSON + FIRESTORE (MAGIA)
-  // =========================================================
-  async function cargarDatosAutomaticos() {
+  // 3. CARGA PRINCIPAL (A PRUEBA DE BOMBAS)
+  window.cargarDatosAutomaticos = async function() {
     const statusEl = document.getElementById('status-text');
     try {
-      // 1. Cargar el JSON gigante que sacaste del Python
+      // Cargamos el JSON SÍ O SÍ
       const response = await fetch('data.json?v=' + new Date().getTime());
-      if (!response.ok) throw new Error('Archivo no encontrado');
+      if (!response.ok) throw new Error('Archivo data.json no encontrado');
       window.DATA = await response.json();
 
-      // 2. Cargar las correcciones manuales de Firestore
-      try {
-        const querySnapshot = await getDocs(collection(db, "correcciones"));
-        const correccionesNube = {};
-        
-        querySnapshot.forEach((doc) => {
-          correccionesNube[doc.id] = doc.data(); 
-        });
+      // Si existe conexión a BD, cruzamos datos. Si no, seguimos sin inmutarnos.
+      if (db) {
+          try {
+            const querySnapshot = await getDocs(collection(db, "correcciones"));
+            const correccionesNube = {};
+            querySnapshot.forEach((doc) => { correccionesNube[doc.id] = doc.data(); });
 
-        // 3. Sobreescribir el JSON con los datos de la Nube
-        window.DATA.forEach(item => {
-          // Usamos el nombre de la unidad limpiado como ID (evita problemas con barras)
-          const docId = item[2].replace(/\//g, '-'); 
-          
-          if (correccionesNube[docId]) {
-            item[4] = correccionesNube[docId].slug;
-            item[5] = 'verified'; // Lo forzamos a verde
-            if (correccionesNube[docId].titular) {
-              item[3] = correccionesNube[docId].titular;
-            }
-            item[6] = 'manual';
+            window.DATA.forEach(item => {
+              const docId = item[2].replace(/\//g, '-'); 
+              if (correccionesNube[docId]) {
+                item[4] = correccionesNube[docId].slug;
+                item[5] = 'verified';
+                if (correccionesNube[docId].titular) item[3] = correccionesNube[docId].titular;
+                item[6] = 'manual';
+              }
+            });
+            statusEl.innerHTML = `✅ JSON y Nube sincronizados correctamente.`;
+          } catch(e) {
+            statusEl.innerHTML = `✅ JSON cargado (Modo visor).`;
           }
-        });
-
-        statusEl.innerHTML = `✅ JSON y Nube sincronizados correctamente.`;
-      } catch(e) {
-        console.warn("No se pudo conectar a Firestore, se mostrará solo el JSON.", e);
-        statusEl.innerHTML = `✅ JSON cargado (Modo local, sin nube).`;
+      } else {
+          statusEl.innerHTML = `✅ JSON cargado (Modo visor).`;
       }
-
       init();
     } catch (err) {
-      statusEl.innerHTML = `❌ <b>Error:</b> No se encontró el archivo 'data.json'.`;
+      statusEl.innerHTML = `❌ <b>Error fatal:</b> No se encuentra 'data.json' en la carpeta.`;
     }
   }
 
@@ -303,17 +302,14 @@ const firebaseConfig = {
 
     const indent = level * 16;
 
-    let dotHtml = '';
+    let statusCls = 'unknown', statusTitle = 'Sin URL';
+    if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL enlazada'; }
+    else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada en la web'; }
+    else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada'; }
     
-    // Si eres Admin, pintamos la bolita interactiva
-    if (window.isAdmin) {
-        let statusCls = 'unknown', statusTitle = 'Sin URL';
-        if (urlStatus === 'verified' || urlStatus === '✓ Verificada') { statusCls = 'verified'; statusTitle = '✓ URL verificada en Nube/JSON (Clic para editar)'; }
-        else if (urlStatus === 'failed' || urlStatus === '✗ No encontrada') { statusCls = 'failed'; statusTitle = '✗ No encontrada (Clic para arreglar a mano)'; }
-        else if (urlStatus === 'guessed' || urlStatus === '⚠ Estimada') { statusCls = 'guessed'; statusTitle = '⚠ URL Estimada (Clic para arreglar a mano)'; }
-        
-        dotHtml = `<span class="url-status ${statusCls}" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
-    }
+    // Si es admin, añadimos la clase que pone el cursor "manita" y permite el clic
+    const adminClass = window.isAdmin ? "is-admin" : "";
+    const dotHtml = `<span class="url-status ${statusCls} ${adminClass}" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
 
     const titularCls = titularSource === 'crawl' ? 'from-crawl' : (titularSource === 'manual' ? 'from-manual' : (titular && normalizarTexto(titular) !== 'vacante' ? 'loaded' : ''));
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
@@ -331,11 +327,9 @@ const firebaseConfig = {
     return tr;
   }
 
-  // =========================================================
-  // GUARDADO EN FIRESTORE
-  // =========================================================
+  // 4. GUARDADO DE DATOS (Solo funciona si eres Admin)
   window.editarURL = async function(idx) {
-    if(!window.isAdmin) return;
+    if(!window.isAdmin) return; // Visitantes no hacen nada al hacer clic
 
     const item = window.DATA[idx];
     const currentSlug = item[4] || '';
@@ -357,37 +351,33 @@ const firebaseConfig = {
           let finalTitular = item[3];
           if(!finalTitular || finalTitular === '') {
               const nuevoTitular = prompt(`¿Quieres añadir también el nombre del Titular/Responsable?`);
-              if(nuevoTitular) {
-                  finalTitular = nuevoTitular.trim();
-              }
+              if(nuevoTitular) finalTitular = nuevoTitular.trim();
           }
 
-          // Actualizamos los datos en memoria para que se pinte en verde de inmediato
           window.DATA[idx][4] = nuevoSlug;
           window.DATA[idx][5] = 'verified';
           window.DATA[idx][3] = finalTitular;
           window.DATA[idx][6] = 'manual';
 
-          // MANDAR A FIREBASE
-          try {
-              document.getElementById('info-box').innerHTML = `⏳ Guardando en la nube...`;
-              const docId = item[2].replace(/\//g, '-'); // Sanitizamos el nombre
-              const docRef = doc(db, "correcciones", docId);
-              
-              await setDoc(docRef, {
-                  slug: nuevoSlug,
-                  titular: finalTitular
-              });
+          // Intentamos mandar a la nube
+          if (db) {
+              try {
+                  document.getElementById('info-box').innerHTML = `⏳ Guardando en la nube...`;
+                  const docId = item[2].replace(/\//g, '-'); 
+                  const docRef = doc(db, "correcciones", docId);
+                  
+                  await setDoc(docRef, { slug: nuevoSlug, titular: finalTitular });
 
-              actualizarFila(idx);
-              actualizarContadoresGlobales();
-
-              document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado en la Nube!</strong> "${item[2]}" aparecerá en Verde para todos los usuarios automáticamente.`;
-              document.getElementById('info-box').style.background = '#eafbf1';
-              document.getElementById('info-box').style.borderColor = '#27ae60';
-          } catch(e) {
-              alert("❌ Error al guardar en Firebase. Revisa los permisos de tu base de datos.\nDetalle: " + e.message);
+                  document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado!</strong> "${item[2]}" aparecerá en Verde para todos.`;
+                  document.getElementById('info-box').style.background = '#eafbf1';
+                  document.getElementById('info-box').style.borderColor = '#27ae60';
+              } catch(e) {
+                  alert("❌ Error al guardar en Firebase. Revisa los permisos de tu base de datos.\nDetalle: " + e.message);
+              }
           }
+
+          actualizarFila(idx);
+          actualizarContadoresGlobales();
       }
     }
   }
@@ -449,7 +439,6 @@ const firebaseConfig = {
       tr.style.display = visible ? '' : 'none';
       if (visible) countVisible++;
     }
-    
     document.getElementById('visible-counter').innerHTML = `Mostrando: <b>${countVisible}</b> resultados`;
   }
 
@@ -479,17 +468,12 @@ const firebaseConfig = {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:12},{wch:85},{wch:15}];
     
-    for (let r = 2; r <= wsData.length; r++) {
-      const url = wsData[r - 1][5];
-      if (url) XLSX.utils.cell_add_comment(ws[XLSX.utils.encode_cell({ c: 5, r: r - 1 })], 'Enlace web', 'Portal');
-    }
-
     XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
     XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
   }
 
-  // Se inicia la carga de datos (JSON + Firestore) al arrancar la página
-  window.onload = cargarDatosAutomaticos;
+  // Disparamos la carga al abrir
+  window.onload = window.cargarDatosAutomaticos;
 
 </script>
 </body>
