@@ -18,6 +18,9 @@
   .btn-collapse { background: rgba(255,255,255,.2); color: white; }
   .btn-collapse:hover { background: rgba(255,255,255,.3); }
   
+  .btn-compare { background: #8e44ad; color: white; }
+  .btn-compare:hover { background: #732d91; }
+
   #btn-admin { background: #34495e; color: white; margin-left: 10px; border: 1px solid rgba(255,255,255,0.3); }
   #btn-admin:hover { background: #2c3e50; }
 
@@ -46,7 +49,9 @@
   thead th:nth-child(2) { width: 180px; }
   thead th:nth-child(3) { min-width: 280px; }
   thead th:nth-child(4) { min-width: 200px; }
-  thead th:nth-child(5) { width: 60px; text-align: center; }
+  
+  /* Celda de nivel (última por defecto) */
+  .col-nivel { width: 60px; text-align: center; }
 
   tr.row-data:hover td { filter: brightness(.96); background-color: #fafbfc; }
   td { padding: 6px 10px; border-bottom: 1px solid #e8edf3; vertical-align: middle; white-space: nowrap; }
@@ -64,8 +69,6 @@
   .url-status.verified { background: #27ae60; box-shadow: 0 0 0 1px #fff; }
 
   .tipo-badge { font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: 600; white-space: nowrap; letter-spacing: 0.5px; }
-
-  /* Estilo uniforme para todos los titulares */
   .titular-cell { color: #2c3e50; }
 
   .l0 td { background: #1F3864 !important; color: white !important; font-weight: 700; font-size: 13px; }
@@ -89,6 +92,10 @@
   <div class="toolbar">
     <button class="btn btn-collapse" onclick="window.collapseAll()">⊟ Colapsar todo</button>
     <button class="btn btn-collapse" onclick="window.expandAll()">⊞ Expandir todo</button>
+    
+    <button class="btn btn-compare" onclick="document.getElementById('file-compare').click()">⚖️ Comparar CSV/Excel</button>
+    <input type="file" id="file-compare" style="display:none;" accept=".csv, .xlsx, .xls" onchange="window.cargarComparador(event)">
+    
     <button id="btn-export" class="btn btn-export" onclick="window.exportExcel()">📥 Exportar Excel</button>
     <button id="btn-admin" class="btn" onclick="window.toggleAdmin()">🔒 Acceso Administración</button>
   </div>
@@ -128,7 +135,8 @@
       <th>Tipo</th>
       <th>Unidad Organizativa</th>
       <th>Titular / Persona</th>
-      <th>Nv.</th>
+      <th id="th-comparador" style="display:none; width: 280px; background:#732d91;">⚖️ Cargo (Fichero Interno)</th>
+      <th class="col-nivel">Nv.</th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
@@ -158,6 +166,11 @@
   window.state = { expanded: {}, typeFilter: 'all', searchQuery: '' };
   window.rows = [];
   window.isAdmin = false; 
+  
+  // VARIABLES DEL COMPARADOR
+  window.modoComparador = false;
+  window.diccionarioComparador = {}; // Guardará { "nombre normalizado": "Cargo" }
+
   const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
   
   let auth = null;
@@ -191,6 +204,62 @@
   } catch (error) {
       console.warn("ℹ️ No se pudo iniciar Firebase.", error);
   }
+
+  // =========================================================
+  // MAGIA DEL COMPARADOR (Lee el CSV/Excel)
+  // =========================================================
+  window.cargarComparador = function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+          const data = new Uint8Array(e.target.result);
+          // SheetJS lee el archivo binario, ya sea Excel o CSV
+          const workbook = XLSX.read(data, {type: 'array'});
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          // Lo convertimos a una matriz de arrays para leer por columnas (A=0, B=1, C=2, D=3, E=4, F=5)
+          const filas = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+          
+          window.diccionarioComparador = {};
+          let matchesCargados = 0;
+          
+          // Empezamos desde 1 para saltarnos la cabecera
+          for (let i = 1; i < filas.length; i++) {
+              const fila = filas[i];
+              // Si la fila existe y la Columna D (Índice 3) tiene dato (Nombre)
+              if (fila && fila[3]) { 
+                  const nombreNormalizado = normalizarTexto(fila[3]);
+                  const cargo = fila[5] || 'Cargo no especificado'; // Columna F (Índice 5)
+                  window.diccionarioComparador[nombreNormalizado] = cargo;
+                  matchesCargados++;
+              }
+          }
+
+          if (matchesCargados > 0) {
+              window.modoComparador = true;
+              document.getElementById('th-comparador').style.display = 'table-cell'; // Mostramos la columna
+              
+              // Repintamos la tabla para que se actualicen las filas
+              init();
+              
+              const infoBox = document.getElementById('info-box');
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos con éxito. Se analizaron ${matchesCargados} nombres de tu fichero.`;
+              infoBox.style.display = 'block';
+              infoBox.style.background = '#f4ecf7';
+              infoBox.style.borderColor = '#8e44ad';
+          } else {
+              alert("No se han encontrado nombres en la Columna D del fichero.");
+          }
+      };
+      reader.readAsArrayBuffer(file);
+      
+      // Reseteamos el input para permitir subir el mismo archivo otra vez si hace falta
+      event.target.value = '';
+  }
+
 
   window.toggleAdmin = async function() {
     if (!auth) {
@@ -291,20 +360,44 @@
     const nextItem = window.DATA[i+1];
     const hasKids = nextItem && nextItem[0] > level;
     
-    // Expandido por defecto
     if (window.state.expanded[i] === undefined) window.state.expanded[i] = true;
 
     const indent = level * 16;
 
-    // MAGIA DE LOS SEMÁFOROS: Solo existen si eres Administrador
     let dotHtml = '';
     if (window.isAdmin) {
         const statusTitle = '✓ URL enlazada en el portal (Clic para editar)';
         dotHtml = `<span class="url-status verified is-admin" title="${statusTitle}" onclick="window.editarURL(${i})"></span>`;
     }
 
-    // MAGIA DE LOS TITULARES: Todos limpios y uniformes, sin importar su origen
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
+
+    // -------------------------------------------------------------
+    // LÓGICA DEL COMPARADOR DE CELDAS
+    // -------------------------------------------------------------
+    let celdaComparadorHtml = '';
+    if (window.modoComparador) {
+        let textoCargo = '<span style="opacity:0.4">—</span>';
+        let claseFondo = '';
+
+        if (titular) {
+            const titularNorm = normalizarTexto(titular);
+            const cargoEncontrado = window.diccionarioComparador[titularNorm];
+
+            if (cargoEncontrado) {
+                // Hay Match ✅
+                textoCargo = `✅ ${escapeHtml(cargoEncontrado)}`;
+                claseFondo = 'background-color: #eafbf1; color: #27ae60; font-weight: 600; font-size: 11px;';
+            } else {
+                // No hay Match ❌
+                textoCargo = `❌ No en fichero`;
+                claseFondo = 'background-color: #fdeded; color: #c0392b; font-size: 10px; font-weight: 500;';
+            }
+        }
+        
+        celdaComparadorHtml = `<td style="${claseFondo} white-space: normal; line-height: 1.2;">${textoCargo}</td>`;
+    }
+    // -------------------------------------------------------------
 
     tr.innerHTML = `
       <td><button class="toggle-btn" id="tb${i}" onclick="window.toggleRow(${i})">${hasKids ? (window.state.expanded[i]?'−':'+') : ' '}</button></td>
@@ -314,7 +407,8 @@
         ${dotHtml}
       </div></td>
       <td class="titular-cell">${typeof titularTxt === 'string' && titularTxt.startsWith('<') ? titularTxt : escapeHtml(titularTxt)}</td>
-      <td style="text-align:center;opacity:.5;font-size:10px">${level}</td>
+      ${celdaComparadorHtml}
+      <td class="col-nivel" style="opacity:.5;font-size:10px">${level}</td>
     `;
     return tr;
   }
@@ -366,7 +460,7 @@
               }
           }
 
-          actualizarFila(idx);
+          init(); // Repintamos entero para que afecte al comparador si está abierto
           actualizarContadoresGlobales();
       }
     }
@@ -375,19 +469,6 @@
   function actualizarContadoresGlobales() {
       document.getElementById('stat-total').textContent = window.DATA.length;
       document.getElementById('stat-titulares').textContent = window.DATA.filter(d => d[3] && d[3] !== '').length;
-  }
-
-  function actualizarFila(idx) {
-    const item = window.DATA[idx];
-    if (!item) return;
-    const oldTr = document.getElementById('r' + idx);
-    if (!oldTr) return;
-    const newTr = construirFila(item, idx);
-    oldTr.parentNode.replaceChild(newTr, oldTr);
-    if (window.rows[idx]) {
-      window.rows[idx].tr = newTr;
-      window.rows[idx].titular = item[3];
-    }
   }
 
   function escapeHtml(s) {
@@ -421,7 +502,13 @@
       }
       
       if (visible && q) {
-          const textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular);
+          // Buscamos tanto en nombre, titular, como en el cargo si el comparador está activo
+          let textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular);
+          if (window.modoComparador && titular) {
+              const cargo = window.diccionarioComparador[normalizarTexto(titular)] || "No en fichero";
+              textToSearch += " " + normalizarTexto(cargo);
+          }
+          
           if (!textToSearch.includes(q)) visible = false;
       }
       
@@ -454,7 +541,13 @@
   window.exportExcel = function() {
     if (!window.DATA.length) { alert('Los datos aún no se han cargado.'); return; }
     const wb = XLSX.utils.book_new();
-    const wsData = [['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona', 'Origen Titular', 'URL Oficial', 'Estado URL']];
+    
+    // Si estamos en modo comparador, exportamos también la columna extra
+    const encabezados = ['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona'];
+    if(window.modoComparador) encabezados.push('Cargo (Fichero Interno)');
+    encabezados.push('Origen Titular', 'URL Oficial');
+    
+    const wsData = [encabezados];
     
     window.DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
       let origen = '';
@@ -462,14 +555,30 @@
       if(titularSource === 'manual') origen = 'Nube / Manual';
       if(titularSource === 'xml') origen = 'XML';
 
-      wsData.push([level, tipo, '  '.repeat(level) + name, titular || '', origen, slug ? (BASE + slug) : '', '✓ Verificada']);
+      const fila = [level, tipo, '  '.repeat(level) + name, titular || ''];
+      
+      if(window.modoComparador) {
+          if(titular) {
+              const cargo = window.diccionarioComparador[normalizarTexto(titular)];
+              fila.push(cargo ? cargo : 'No en fichero');
+          } else {
+              fila.push('');
+          }
+      }
+      
+      fila.push(origen, slug ? (BASE + slug) : '');
+      wsData.push(fila);
     });
     
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-    ws['!cols'] = [{wch:6},{wch:22},{wch:65},{wch:40},{wch:12},{wch:85},{wch:15}];
+    
+    const anchos = [{wch:6},{wch:22},{wch:65},{wch:40}];
+    if(window.modoComparador) anchos.push({wch:40});
+    anchos.push({wch:12},{wch:85});
+    ws['!cols'] = anchos;
     
     XLSX.utils.book_append_sheet(wb, ws, 'Organización CM');
-    XLSX.writeFile(wb, 'Organigrama_CM_Actualizado.xlsx');
+    XLSX.writeFile(wb, 'Auditoria_RRHH_CM.xlsx');
   }
 
   window.onload = window.cargarDatosAutomaticos;
