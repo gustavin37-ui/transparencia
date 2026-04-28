@@ -149,9 +149,6 @@
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
   import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-  // =========================================================
-  // 🔴 CONFIGURACIÓN FIREBASE (Ya integrada)
-  // =========================================================
   const firebaseConfig = {
     apiKey: "AIzaSyB7lFyFAd8-8pEEV0_cTls0Bqmv3VgV3Lo",
     authDomain: "transparencia-1c0eb.firebaseapp.com",
@@ -166,7 +163,6 @@
   window.rows = [];
   window.isAdmin = false; 
   
-  // VARIABLES DEL COMPARADOR
   window.modoComparador = false;
   window.diccionarioTitulares = {}; 
   window.diccionarioUnidades = {};  
@@ -202,25 +198,46 @@
   }
 
   // =========================================================
-  // NORMALIZACIÓN AVANZADA: ELIMINA TILDES Y PUNTUACIÓN
+  // NORMALIZACIÓN BÁSICA (Tildes y Puntuación)
   // =========================================================
   function normalizarTexto(texto) {
       if (!texto) return "";
       let t = texto.toString()
           .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "") // Quita todas las tildes y acentos
+          .replace(/[\u0300-\u036f]/g, "") 
           .toLowerCase();
       
-      // Quitar signos de puntuación, comas, guiones, puntos, paréntesis...
       t = t.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ");
-      // Reducir espacios dobles a simples
       t = t.replace(/\s{2,}/g, " ");
       
       return t.trim();
   }
 
   // =========================================================
-  // MAGIA DEL COMPARADOR DOBLE (TITULAR Y UNIDAD/AREA)
+  // NORMALIZACIÓN PARA CRUCE (Arranca géneros y tipos)
+  // =========================================================
+  function normalizarParaCruce(texto) {
+      let t = normalizarTexto(texto);
+      
+      // Palabras a eliminar para que "Subdirectora" y "Subdireccion" coincidan
+      const palabrasABorrar = [
+          "subdireccion", "subdirector", "subdirectora",
+          "direccion", "director", "directora",
+          "viceconsejeria", "viceconsejero", "viceconsejera",
+          "consejeria", "consejero", "consejera",
+          "secretaria", "secretario"
+      ];
+      
+      // Creamos una expresión regular que borre esas palabras enteras
+      const regex = new RegExp('\\b(' + palabrasABorrar.join('|') + ')\\b', 'g');
+      t = t.replace(regex, '');
+      
+      // Limpiamos los espacios sobrantes que hayan quedado
+      return t.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  // =========================================================
+  // CARGAR EXCEL/CSV
   // =========================================================
   window.cargarComparador = function(event) {
       const file = event.target.files[0];
@@ -244,36 +261,24 @@
               
               if (fila) { 
                   const nombre = fila[3]; // Columna D (NOMBRE)
-                  const cargo = fila[5];  // Columna F (CARGO)
-                  const area = fila[6];   // Columna G (AREA) -> Vital para cruzar la Unidad
+                  const cargo = fila[5];  // Columna F (CARGO) -> Única que miramos
                   
-                  // REGLA 1: Guardamos el Titular
+                  // REGLA 1: Guardamos el Titular (Normal básico)
                   if (nombre) {
                       const nombreNorm = normalizarTexto(nombre);
-                      window.diccionarioTitulares[nombreNorm] = cargo || area || 'Cargo no especificado';
+                      window.diccionarioTitulares[nombreNorm] = cargo || 'Cargo no especificado';
                       matchesCargados++;
                   }
                   
-                  // REGLA 2: Guardamos la Columna F (Cargo) como identificador
+                  // REGLA 2: Guardamos la Columna F limpia de géneros/tipos
                   if (cargo) {
-                      const cargoNorm = normalizarTexto(cargo);
+                      // Aplicamos el limpiador potente (se come los "subdirectora", etc.)
+                      const cargoNorm = normalizarParaCruce(cargo);
                       if (!window.diccionarioUnidades[cargoNorm]) {
                           window.diccionarioUnidades[cargoNorm] = nombre;
                       } else {
                           if (nombre && !window.diccionarioUnidades[cargoNorm].includes(nombre)) {
                               window.diccionarioUnidades[cargoNorm] += " / " + nombre;
-                          }
-                      }
-                  }
-
-                  // REGLA 3: Guardamos la Columna G (Area) como identificador (Muy útil para Direcciones/Subdirecciones)
-                  if (area) {
-                      const areaNorm = normalizarTexto(area);
-                      if (!window.diccionarioUnidades[areaNorm]) {
-                          window.diccionarioUnidades[areaNorm] = nombre;
-                      } else {
-                          if (nombre && !window.diccionarioUnidades[areaNorm].includes(nombre)) {
-                              window.diccionarioUnidades[areaNorm] += " / " + nombre;
                           }
                       }
                   }
@@ -284,10 +289,10 @@
               window.modoComparador = true;
               document.getElementById('th-comparador').style.display = 'table-cell'; 
               
-              init(); // Repintamos la tabla
+              init(); 
               
               const infoBox = document.getElementById('info-box');
-              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos mediante doble verificación, ignorando tildes y comas.`;
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos (Ignorando diferencias como Subdirectora/Subdirección).`;
               infoBox.style.display = 'block';
               infoBox.style.background = '#f4ecf7';
               infoBox.style.borderColor = '#8e44ad';
@@ -298,7 +303,6 @@
       reader.readAsArrayBuffer(file);
       event.target.value = '';
   }
-
 
   window.toggleAdmin = async function() {
     if (!auth) return;
@@ -403,7 +407,7 @@
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
 
     // -------------------------------------------------------------
-    // LÓGICA DEL COMPARADOR DOBLE (TITULAR Y UNIDAD)
+    // LÓGICA DEL COMPARADOR DOBLE (TITULAR Y UNIDAD LIMPIA)
     // -------------------------------------------------------------
     let celdaComparadorHtml = '';
     if (window.modoComparador) {
@@ -423,9 +427,9 @@
             }
         }
         
-        // CRITERIO 2: Buscar por Unidad Organizativa
+        // CRITERIO 2: Buscar por Unidad Organizativa (Limpiando Subdireccion/Subdirectora)
         if (!matchEncontrado) {
-            const unidadNorm = normalizarTexto(name);
+            const unidadNorm = normalizarParaCruce(name);
             const titularEncontrado = window.diccionarioUnidades[unidadNorm];
 
             if (titularEncontrado) {
@@ -549,8 +553,8 @@
           if (window.modoComparador) {
               if (titular && window.diccionarioTitulares[normalizarTexto(titular)]) {
                   textToSearch += " " + normalizarTexto(window.diccionarioTitulares[normalizarTexto(titular)]);
-              } else if (window.diccionarioUnidades[normalizarTexto(name)]) {
-                  textToSearch += " " + normalizarTexto(window.diccionarioUnidades[normalizarTexto(name)]);
+              } else if (window.diccionarioUnidades[normalizarParaCruce(name)]) {
+                  textToSearch += " " + normalizarTexto(window.diccionarioUnidades[normalizarParaCruce(name)]);
               }
           }
           
@@ -603,7 +607,7 @@
       
       if(window.modoComparador) {
           const titularNorm = normalizarTexto(titular);
-          const unidadNorm = normalizarTexto(name);
+          const unidadNorm = normalizarParaCruce(name);
           
           if (titular && window.diccionarioTitulares[titularNorm]) {
               fila.push('✅ ' + window.diccionarioTitulares[titularNorm]);
