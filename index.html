@@ -45,10 +45,11 @@
 
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #2E75B6; color: white; padding: 10px; font-size: 11px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-align: left; white-space: nowrap; }
-  thead th:first-child { width: 24px; }
-  thead th:nth-child(2) { width: 180px; }
-  thead th:nth-child(3) { min-width: 280px; }
-  thead th:nth-child(4) { min-width: 200px; }
+  thead th:nth-child(1) { width: 24px; }
+  thead th:nth-child(2) { width: 140px; } /* Tipo */
+  thead th:nth-child(3) { width: 200px; } /* Consejería */
+  thead th:nth-child(4) { min-width: 280px; } /* Unidad Organizativa */
+  thead th:nth-child(5) { min-width: 200px; } /* Titular */
   
   .col-nivel { width: 60px; text-align: center; }
 
@@ -138,6 +139,7 @@
     <tr>
       <th></th>
       <th>Tipo</th>
+      <th>Consejería</th>
       <th>Unidad Organizativa</th>
       <th>Titular / Persona</th>
       <th id="th-comparador" class="col-comparador" style="width: 280px; background:#732d91;">⚖️ Fichero Interno</th>
@@ -319,7 +321,26 @@
     try {
       const response = await fetch('data.json?v=' + new Date().getTime());
       if (!response.ok) throw new Error('Archivo data.json no encontrado');
-      window.DATA = await response.json();
+      let rawData = await response.json();
+
+      // =========================================================
+      // ASIGNACIÓN DINÁMICA DE CONSEJERÍA A CADA FILA
+      // =========================================================
+      let cAct = "Presidencia de la Comunidad de Madrid";
+      rawData.forEach(item => {
+          const tipo = item[1];
+          const nombreUnidad = item[2];
+          
+          if (tipo === 'Presidenta') {
+              cAct = "Presidencia de la Comunidad de Madrid";
+          } else if (tipo === 'Consejería' || normalizarTexto(nombreUnidad).startsWith('consejeria')) {
+              cAct = nombreUnidad;
+          }
+          // Guardamos la Consejería en el índice 7 del Array
+          item[7] = cAct; 
+      });
+
+      window.DATA = rawData;
 
       if (db) {
           try {
@@ -365,7 +386,14 @@
     window.DATA.forEach((item, i) => {
       const tr = construirFila(item, i);
       tbody.appendChild(tr);
-      window.rows.push({tr, level: item[0], i, name: item[2], titular: item[3]});
+      window.rows.push({
+          tr, 
+          level: item[0], 
+          i, 
+          name: item[2], 
+          titular: item[3], 
+          consejeria: item[7] // Agregado para el buscador
+      });
     });
 
     applyVisibility();
@@ -373,7 +401,7 @@
   }
 
   function construirFila(item, i) {
-    const [level, tipo, name, titular, slug, urlStatus, titularSource] = item;
+    const [level, tipo, name, titular, slug, urlStatus, titularSource, consejeria] = item;
     const url = slug ? (BASE + slug) : '#';
     const lvl = level > 5 ? 5 : level;
     const COLORS = {0:'#1F3864',1:'#2E75B6',2:'#4472C4',3:'#8FAADC',4:'#BDD7EE',5:'#DEEAF1'};
@@ -396,6 +424,9 @@
     }
 
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
+    
+    // Si la fila es la propia Consejería, no repetimos su nombre en la columna
+    const textConsejeria = (tipo === 'Consejería' || tipo === 'Presidenta') ? '<span style="opacity:0.3">—</span>' : escapeHtml(consejeria);
 
     // -------------------------------------------------------------
     // LÓGICA DEL COMPARADOR: MANEJO DE MULTIPLES NOMBRES Y EDICIÓN
@@ -407,7 +438,6 @@
         let onclickAttr = '';
         let matchEncontrado = false;
 
-        // CRITERIO 1: Buscar por Titular / Persona (Ya está asignado correctamente)
         if (titular) {
             const titularNorm = normalizarTexto(titular);
             const cargoEncontrado = window.diccionarioTitulares[titularNorm];
@@ -419,19 +449,16 @@
             }
         }
         
-        // CRITERIO 2: Buscar por Unidad Organizativa
         if (!matchEncontrado) {
             const unidadNorm = normalizarParaCruce(name);
             const titularesEncontrados = window.diccionarioUnidades[unidadNorm];
 
             if (titularesEncontrados) {
                 if (titularesEncontrados.length === 1 || !window.isAdmin) {
-                    // Para el visitante o si solo hay 1 candidato: mostramos el primero
                     textoCargo = `📌 ${escapeHtml(titularesEncontrados[0])}`;
                     claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
                 } 
                 else {
-                    // Solo para el Administrador cuando hay varios candidatos: Mostramos AMARILLO CLICKABLE
                     textoCargo = `⚠️ Varios en fichero:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic aquí para asignar)</span>`;
                     claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
                     onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
@@ -448,6 +475,7 @@
     tr.innerHTML = `
       <td><button class="toggle-btn" id="tb${i}" onclick="window.toggleRow(${i})">${hasKids ? (window.state.expanded[i]?'−':'+') : ' '}</button></td>
       <td><span class="tipo-badge" style="background:${COLORS[lvl]}22;color:${COLORS[lvl]};border:1px solid ${COLORS[lvl]}44">${tipo}</span></td>
+      <td style="font-size:10px; color:#555; white-space:normal; line-height:1.2; max-width:180px;">${textConsejeria}</td>
       <td><div class="name-cell" style="padding-left:${indent}px">
         <a class="name-link" href="${url}" target="_blank" title="${url}">${escapeHtml(name)}</a>
         ${dotHtml}
@@ -459,9 +487,6 @@
     return tr;
   }
 
-  // =========================================================
-  // NUEVA FUNCIÓN: ASIGNAR TITULAR AL HACER CLIC EN EL AMARILLO
-  // =========================================================
   window.fijarTitularManual = async function(idx) {
       if (!window.isAdmin) return;
       
@@ -474,11 +499,9 @@
       const nuevoTitular = prompt(mensaje, sugerencia);
 
       if (nuevoTitular !== null && nuevoTitular.trim() !== '') {
-          // Actualizamos local
           window.DATA[idx][3] = nuevoTitular.trim();
           window.DATA[idx][6] = 'manual';
 
-          // Mandamos a la Nube (merge:true respeta el slug de URL que ya tuviera)
           if (db) {
               try {
                   document.getElementById('info-box').innerHTML = `⏳ Fijando titular en la nube...`;
@@ -578,7 +601,7 @@
     }
     
     for (let i = 0; i < window.rows.length; i++) {
-      const {tr, level, name, titular} = window.rows[i];
+      const {tr, level, name, titular, consejeria} = window.rows[i];
       let visible = true;
       
       if (tf === 'all' && !q) {
@@ -598,7 +621,8 @@
       }
       
       if (visible && q) {
-          let textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular);
+          // El buscador ahora también mira dentro del texto de la consejería
+          let textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular) + " " + normalizarTexto(consejeria);
           
           if (window.modoComparador) {
               if (titular && window.diccionarioTitulares[normalizarTexto(titular)]) {
@@ -644,19 +668,20 @@
     const tf = window.state.typeFilter;
     const exportarComparador = window.modoComparador && !['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
 
-    const encabezados = ['Nivel', 'Tipo', 'Unidad Organizativa', 'Titular / Persona'];
+    // Se añade la columna Consejería al Excel
+    const encabezados = ['Nivel', 'Tipo', 'Consejería', 'Unidad Organizativa', 'Titular / Persona'];
     if(exportarComparador) encabezados.push('Fichero Interno');
     encabezados.push('Origen Titular', 'URL Oficial');
     
     const wsData = [encabezados];
     
-    window.DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource]) => {
+    window.DATA.forEach(([level, tipo, name, titular, slug, urlStatus, titularSource, consejeria]) => {
       let origen = '';
       if(titularSource === 'crawl') origen = 'Araña Web';
       if(titularSource === 'manual') origen = 'Nube / Manual';
       if(titularSource === 'xml') origen = 'XML';
 
-      const fila = [level, tipo, '  '.repeat(level) + name, titular || ''];
+      const fila = [level, tipo, consejeria || '', '  '.repeat(level) + name, titular || ''];
       
       if(exportarComparador) {
           const titularNorm = normalizarTexto(titular);
@@ -682,7 +707,7 @@
     
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     
-    const anchos = [{wch:6},{wch:22},{wch:65},{wch:40}];
+    const anchos = [{wch:6},{wch:22},{wch:35},{wch:65},{wch:40}];
     if(exportarComparador) anchos.push({wch:45});
     anchos.push({wch:12},{wch:85});
     ws['!cols'] = anchos;
