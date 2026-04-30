@@ -172,7 +172,7 @@
   window.modoComparador = false;
   window.diccionarioTitulares = {}; 
   window.diccionarioUnidades = {};  
-  window.frecuenciaUnidades = {}; // Para detectar si "Subdireccion General" sale 9 veces en el JSON
+  window.frecuenciaUnidades = {}; 
 
   const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
   
@@ -292,6 +292,47 @@
       event.target.value = '';
   }
 
+  // =========================================================
+  // LOGICA MEJORADA DE LOGIN / LOGOUT
+  // =========================================================
+  window.toggleAdmin = async function() {
+    if (!auth) {
+        alert("❌ Opciones de Administrador desactivadas. Firebase no iniciado.");
+        return;
+    }
+
+    if (window.isAdmin) {
+      // PROCESO DE CERRAR SESIÓN DE FORMA SEGURA
+      try {
+          await signOut(auth);
+          // Forzamos el estado a Visitante inmediatamente
+          window.isAdmin = false;
+          document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
+          document.getElementById('btn-admin').style.background = '#34495e';
+          document.getElementById('info-box').style.display = 'none';
+          document.getElementById('btn-export').style.display = 'none';
+          
+          // Repintamos la tabla para que desaparezcan los lápices/botones de edición
+          if (window.DATA.length > 0) init(); 
+      } catch (error) {
+          console.error("Error al cerrar sesión:", error);
+          alert("Hubo un problema al cerrar sesión.");
+      }
+    } else {
+      // PROCESO DE INICIO DE SESIÓN
+      const email = prompt("✉️ Email de administrador:");
+      if (!email) return;
+      const pwd = prompt("🔑 Contraseña:");
+      if (!pwd) return;
+      
+      try {
+        await signInWithEmailAndPassword(auth, email, pwd);
+      } catch (error) {
+        alert("❌ Credenciales incorrectas.");
+      }
+    }
+  }
+
   window.cargarDatosAutomaticos = async function() {
     const statusEl = document.getElementById('status-text');
     try {
@@ -350,7 +391,6 @@
         return !esEntidadExcluida && estaEnElPortal;
     });
 
-    // Analizamos qué nombres de Unidades salen varias veces en la web (Ej: 9 Subdirecciones Económicas)
     window.frecuenciaUnidades = {};
     window.DATA.forEach(item => {
         const unidadNorm = normalizarParaCruce(item[2]);
@@ -400,7 +440,6 @@
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
     const textConsejeria = (tipo === 'Consejería' || tipo === 'Presidenta') ? '<span style="opacity:0.3">—</span>' : escapeHtml(consejeria);
 
-    // LÓGICA DEL COMPARADOR: MANEJO DE MULTIPLES NOMBRES Y EDICIÓN
     let celdaComparadorHtml = '';
     if (window.modoComparador) {
         let textoCargo = '<span style="opacity:0.4">—</span>';
@@ -408,7 +447,6 @@
         let onclickAttr = '';
         let matchEncontrado = false;
 
-        // Si ya está fijado manualmente por el admin (Nube) -> Match Directo
         if (titularSource === 'manual') {
             textoCargo = `✅ Fijado manualmente`;
             claseFondo = 'background-color: #eafbf1; color: #27ae60; font-weight: 600; font-size: 11px;';
@@ -429,19 +467,16 @@
             const estaUnidadSeRepiteEnElOrganigrama = (window.frecuenciaUnidades[unidadNorm] > 1);
 
             if (titularesEncontrados) {
-                // Si la unidad existe en varias Consejerías (Ej: Gestión Económica) avisamos en Amarillo
                 if (estaUnidadSeRepiteEnElOrganigrama && window.isAdmin) {
                     textoCargo = `⚠️ Multi-Consejería:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic para fijar el tuyo)</span>`;
                     claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
                     onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
                 }
-                // Si hay varios candidatos para un puesto único
                 else if (titularesEncontrados.length > 1 && window.isAdmin) {
                     textoCargo = `⚠️ Varios en fichero:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic aquí para asignar)</span>`;
                     claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
                     onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
                 } 
-                // En cualquier otro caso (Visitante o único candidato) lo asignamos
                 else {
                     textoCargo = `📌 ${escapeHtml(titularesEncontrados[0])}`;
                     claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
