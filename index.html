@@ -46,14 +46,13 @@
   table { width: 100%; border-collapse: collapse; }
   thead th { background: #2E75B6; color: white; padding: 10px; font-size: 11px; font-weight: 700; position: sticky; top: 0; z-index: 10; text-align: left; white-space: nowrap; }
   thead th:nth-child(1) { width: 24px; }
-  thead th:nth-child(2) { width: 140px; } /* Tipo */
-  thead th:nth-child(3) { width: 200px; } /* Consejería */
-  thead th:nth-child(4) { min-width: 280px; } /* Unidad Organizativa */
-  thead th:nth-child(5) { min-width: 200px; } /* Titular */
+  thead th:nth-child(2) { width: 140px; }
+  thead th:nth-child(3) { width: 200px; }
+  thead th:nth-child(4) { min-width: 280px; }
+  thead th:nth-child(5) { min-width: 200px; }
   
   .col-nivel { width: 60px; text-align: center; }
 
-  /* CLASE MAGICA PARA OCULTAR LA COLUMNA DEL COMPARADOR */
   .hide-comparador .col-comparador { display: none !important; }
 
   tr.row-data:hover td { filter: brightness(.96); background-color: #fafbfc; }
@@ -128,12 +127,11 @@
 
 <div id="info-box">
   💡 <strong>Modo Administrador Activo:</strong> 
-  <br>- Haz clic sobre un punto verde para corregir su URL.
-  <br>- Haz clic sobre un panel amarillo del comparador para elegir al Titular correcto.
+  <br>- Clic sobre un punto verde para corregir su URL.
+  <br>- Clic sobre panel amarillo en el comparador para fijar un Titular múltiple.
 </div>
 
 <div id="table-wrap">
-<!-- Tabla inicializada con la clase hide-comparador por defecto -->
 <table id="org-table" class="hide-comparador">
   <thead>
     <tr>
@@ -174,6 +172,7 @@
   window.modoComparador = false;
   window.diccionarioTitulares = {}; 
   window.diccionarioUnidades = {};  
+  window.frecuenciaUnidades = {}; // Para detectar si "Subdireccion General" sale 9 veces en el JSON
 
   const BASE = "https://www.comunidad.madrid/transparencia/unidad-organizativa-responsable/";
   
@@ -220,7 +219,6 @@
 
   function normalizarParaCruce(texto) {
       let t = normalizarTexto(texto);
-      
       const palabrasABorrar = [
           "subdireccion", "subdirector", "subdirectora",
           "direccion", "director", "directora",
@@ -228,10 +226,8 @@
           "consejeria", "consejero", "consejera",
           "secretaria", "secretario"
       ];
-      
       const regex = new RegExp('\\b(' + palabrasABorrar.join('|') + ')\\b', 'g');
       t = t.replace(regex, '');
-      
       return t.replace(/\s{2,}/g, ' ').trim();
   }
 
@@ -254,10 +250,9 @@
           
           for (let i = 1; i < filas.length; i++) {
               const fila = filas[i];
-              
               if (fila) { 
-                  const nombre = fila[3]; // Columna D (NOMBRE)
-                  const cargo = fila[5];  // Columna F (CARGO)
+                  const nombre = fila[3]; 
+                  const cargo = fila[5];  
                   
                   if (nombre) {
                       const nombreNorm = normalizarTexto(nombre);
@@ -285,7 +280,7 @@
               init(); 
               
               const infoBox = document.getElementById('info-box');
-              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Usa los filtros (Subdirección, División...) para ver las diferencias.`;
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Usa los filtros para ver las diferencias. Los amarillos son cargos repetidos en varias Consejerías.`;
               infoBox.style.display = 'block';
               infoBox.style.background = '#f4ecf7';
               infoBox.style.borderColor = '#8e44ad';
@@ -297,25 +292,6 @@
       event.target.value = '';
   }
 
-  window.toggleAdmin = async function() {
-    if (!auth) return;
-
-    if (window.isAdmin) {
-      await signOut(auth);
-    } else {
-      const email = prompt("✉️ Email de administrador:");
-      if (!email) return;
-      const pwd = prompt("🔑 Contraseña:");
-      if (!pwd) return;
-      
-      try {
-        await signInWithEmailAndPassword(auth, email, pwd);
-      } catch (error) {
-        alert("❌ Credenciales incorrectas.");
-      }
-    }
-  }
-
   window.cargarDatosAutomaticos = async function() {
     const statusEl = document.getElementById('status-text');
     try {
@@ -323,20 +299,12 @@
       if (!response.ok) throw new Error('Archivo data.json no encontrado');
       let rawData = await response.json();
 
-      // =========================================================
-      // ASIGNACIÓN DINÁMICA DE CONSEJERÍA A CADA FILA
-      // =========================================================
       let cAct = "Presidencia de la Comunidad de Madrid";
       rawData.forEach(item => {
           const tipo = item[1];
           const nombreUnidad = item[2];
-          
-          if (tipo === 'Presidenta') {
-              cAct = "Presidencia de la Comunidad de Madrid";
-          } else if (tipo === 'Consejería' || normalizarTexto(nombreUnidad).startsWith('consejeria')) {
-              cAct = nombreUnidad;
-          }
-          // Guardamos la Consejería en el índice 7 del Array
+          if (tipo === 'Presidenta') cAct = "Presidencia de la Comunidad de Madrid";
+          else if (tipo === 'Consejería' || normalizarTexto(nombreUnidad).startsWith('consejeria')) cAct = nombreUnidad;
           item[7] = cAct; 
       });
 
@@ -379,8 +347,14 @@
         const nombreUnidad = normalizarTexto(item[2] || "");
         const esEntidadExcluida = nombreUnidad.includes("otras entidades del sector");
         const estaEnElPortal = (item[5] === 'verified' || item[5] === '✓ Verificada');
-        
         return !esEntidadExcluida && estaEnElPortal;
+    });
+
+    // Analizamos qué nombres de Unidades salen varias veces en la web (Ej: 9 Subdirecciones Económicas)
+    window.frecuenciaUnidades = {};
+    window.DATA.forEach(item => {
+        const unidadNorm = normalizarParaCruce(item[2]);
+        window.frecuenciaUnidades[unidadNorm] = (window.frecuenciaUnidades[unidadNorm] || 0) + 1;
     });
 
     window.DATA.forEach((item, i) => {
@@ -392,7 +366,7 @@
           i, 
           name: item[2], 
           titular: item[3], 
-          consejeria: item[7] // Agregado para el buscador
+          consejeria: item[7] 
       });
     });
 
@@ -424,13 +398,9 @@
     }
 
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
-    
-    // Si la fila es la propia Consejería, no repetimos su nombre en la columna
     const textConsejeria = (tipo === 'Consejería' || tipo === 'Presidenta') ? '<span style="opacity:0.3">—</span>' : escapeHtml(consejeria);
 
-    // -------------------------------------------------------------
     // LÓGICA DEL COMPARADOR: MANEJO DE MULTIPLES NOMBRES Y EDICIÓN
-    // -------------------------------------------------------------
     let celdaComparadorHtml = '';
     if (window.modoComparador) {
         let textoCargo = '<span style="opacity:0.4">—</span>';
@@ -438,10 +408,14 @@
         let onclickAttr = '';
         let matchEncontrado = false;
 
-        if (titular) {
+        // Si ya está fijado manualmente por el admin (Nube) -> Match Directo
+        if (titularSource === 'manual') {
+            textoCargo = `✅ Fijado manualmente`;
+            claseFondo = 'background-color: #eafbf1; color: #27ae60; font-weight: 600; font-size: 11px;';
+            matchEncontrado = true;
+        } else if (titular) {
             const titularNorm = normalizarTexto(titular);
             const cargoEncontrado = window.diccionarioTitulares[titularNorm];
-
             if (cargoEncontrado) {
                 textoCargo = `✅ ${escapeHtml(cargoEncontrado)}`;
                 claseFondo = 'background-color: #eafbf1; color: #27ae60; font-weight: 600; font-size: 11px;';
@@ -452,16 +426,26 @@
         if (!matchEncontrado) {
             const unidadNorm = normalizarParaCruce(name);
             const titularesEncontrados = window.diccionarioUnidades[unidadNorm];
+            const estaUnidadSeRepiteEnElOrganigrama = (window.frecuenciaUnidades[unidadNorm] > 1);
 
             if (titularesEncontrados) {
-                if (titularesEncontrados.length === 1 || !window.isAdmin) {
-                    textoCargo = `📌 ${escapeHtml(titularesEncontrados[0])}`;
-                    claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
-                } 
-                else {
+                // Si la unidad existe en varias Consejerías (Ej: Gestión Económica) avisamos en Amarillo
+                if (estaUnidadSeRepiteEnElOrganigrama && window.isAdmin) {
+                    textoCargo = `⚠️ Multi-Consejería:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic para fijar el tuyo)</span>`;
+                    claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
+                    onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
+                }
+                // Si hay varios candidatos para un puesto único
+                else if (titularesEncontrados.length > 1 && window.isAdmin) {
                     textoCargo = `⚠️ Varios en fichero:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic aquí para asignar)</span>`;
                     claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
                     onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
+                } 
+                // En cualquier otro caso (Visitante o único candidato) lo asignamos
+                else {
+                    textoCargo = `📌 ${escapeHtml(titularesEncontrados[0])}`;
+                    claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
+                    if (window.isAdmin) onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
                 }
             } else {
                 textoCargo = `❌ No en fichero`;
@@ -492,10 +476,10 @@
       
       const item = window.DATA[idx];
       const unidadNorm = normalizarParaCruce(item[2]);
-      const candidatos = window.diccionarioUnidades[unidadNorm];
-      const sugerencia = candidatos ? candidatos[0] : '';
+      const candidatos = window.diccionarioUnidades[unidadNorm] || [];
+      const sugerencia = candidatos.length > 0 ? candidatos[0] : '';
 
-      const mensaje = `⚠️ MÚLTIPLES CANDIDATOS DETECTADOS\n\nTu fichero sugiere estas opciones para esta unidad:\n- ${candidatos.join('\n- ')}\n\nEscribe el nombre definitivo para asignarlo y guardarlo en la nube:`;
+      const mensaje = `⚠️ ASIGNACIÓN MANUAL\n\nTu fichero sugiere estas opciones para esta unidad:\n- ${candidatos.join('\n- ')}\n\nEscribe el nombre definitivo para asignarlo y guardarlo en la nube:`;
       const nuevoTitular = prompt(mensaje, sugerencia);
 
       if (nuevoTitular !== null && nuevoTitular.trim() !== '') {
@@ -621,7 +605,6 @@
       }
       
       if (visible && q) {
-          // El buscador ahora también mira dentro del texto de la consejería
           let textToSearch = normalizarTexto(name) + " " + normalizarTexto(titular) + " " + normalizarTexto(consejeria);
           
           if (window.modoComparador) {
@@ -668,7 +651,6 @@
     const tf = window.state.typeFilter;
     const exportarComparador = window.modoComparador && !['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
 
-    // Se añade la columna Consejería al Excel
     const encabezados = ['Nivel', 'Tipo', 'Consejería', 'Unidad Organizativa', 'Titular / Persona'];
     if(exportarComparador) encabezados.push('Fichero Interno');
     encabezados.push('Origen Titular', 'URL Oficial');
@@ -686,12 +668,18 @@
       if(exportarComparador) {
           const titularNorm = normalizarTexto(titular);
           const unidadNorm = normalizarParaCruce(name);
+          const estaUnidadSeRepiteEnElOrganigrama = (window.frecuenciaUnidades[unidadNorm] > 1);
           
-          if (titular && window.diccionarioTitulares[titularNorm]) {
+          if (titularSource === 'manual') {
+              fila.push('✅ Fijado manualmente');
+          }
+          else if (titular && window.diccionarioTitulares[titularNorm]) {
               fila.push('✅ ' + window.diccionarioTitulares[titularNorm]);
           } else if (window.diccionarioUnidades[unidadNorm]) {
               const titularesEncontrados = window.diccionarioUnidades[unidadNorm];
-              if (titularesEncontrados.length === 1 || !window.isAdmin) {
+              if (estaUnidadSeRepiteEnElOrganigrama) {
+                  fila.push('⚠️ Multi-Consejería: ' + titularesEncontrados.join(' / '));
+              } else if (titularesEncontrados.length === 1 || !window.isAdmin) {
                   fila.push('📌 ' + titularesEncontrados[0]);
               } else {
                   fila.push('⚠️ Varios en fichero: ' + titularesEncontrados.join(' / '));
