@@ -126,10 +126,13 @@
 </div>
 
 <div id="info-box">
-  💡 <strong>Modo Administrador Activo:</strong> Haz clic sobre cualquier punto verde para corregir la URL a mano y guardarla en la nube para todos los usuarios.
+  💡 <strong>Modo Administrador Activo:</strong> 
+  <br>- Haz clic sobre un punto verde para corregir su URL.
+  <br>- Haz clic sobre un panel amarillo del comparador para elegir al Titular correcto.
 </div>
 
 <div id="table-wrap">
+<!-- Tabla inicializada con la clase hide-comparador por defecto -->
 <table id="org-table" class="hide-comparador">
   <thead>
     <tr>
@@ -260,13 +263,13 @@
                       matchesCargados++;
                   }
                   
-                  if (cargo) {
+                  if (cargo && nombre) {
                       const cargoNorm = normalizarParaCruce(cargo);
                       if (!window.diccionarioUnidades[cargoNorm]) {
-                          window.diccionarioUnidades[cargoNorm] = nombre;
+                          window.diccionarioUnidades[cargoNorm] = [nombre];
                       } else {
-                          if (nombre && !window.diccionarioUnidades[cargoNorm].includes(nombre)) {
-                              window.diccionarioUnidades[cargoNorm] += " / " + nombre;
+                          if (!window.diccionarioUnidades[cargoNorm].includes(nombre)) {
+                              window.diccionarioUnidades[cargoNorm].push(nombre);
                           }
                       }
                   }
@@ -275,10 +278,12 @@
 
           if (matchesCargados > 0) {
               window.modoComparador = true;
+              document.getElementById('th-comparador').style.display = 'table-cell'; 
+              
               init(); 
               
               const infoBox = document.getElementById('info-box');
-              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Se han cruzado los datos. Usa los filtros (Subdirección, División...) para ver las diferencias.`;
+              infoBox.innerHTML = `⚖️ <strong>Modo Comparador Activo:</strong> Usa los filtros (Subdirección, División...) para ver las diferencias.`;
               infoBox.style.display = 'block';
               infoBox.style.background = '#f4ecf7';
               infoBox.style.borderColor = '#8e44ad';
@@ -392,13 +397,17 @@
 
     const titularTxt = titular || '<span style="opacity:.4;font-style:italic;font-size:10px">—</span>';
 
-    // CELDA DEL COMPARADOR (Siempre se genera, el CSS la oculta o muestra dinámicamente)
+    // -------------------------------------------------------------
+    // LÓGICA DEL COMPARADOR: MANEJO DE MULTIPLES NOMBRES Y EDICIÓN
+    // -------------------------------------------------------------
     let celdaComparadorHtml = '';
     if (window.modoComparador) {
         let textoCargo = '<span style="opacity:0.4">—</span>';
         let claseFondo = '';
+        let onclickAttr = '';
         let matchEncontrado = false;
 
+        // CRITERIO 1: Buscar por Titular / Persona (Ya está asignado correctamente)
         if (titular) {
             const titularNorm = normalizarTexto(titular);
             const cargoEncontrado = window.diccionarioTitulares[titularNorm];
@@ -410,21 +419,30 @@
             }
         }
         
+        // CRITERIO 2: Buscar por Unidad Organizativa
         if (!matchEncontrado) {
             const unidadNorm = normalizarParaCruce(name);
-            const titularEncontrado = window.diccionarioUnidades[unidadNorm];
+            const titularesEncontrados = window.diccionarioUnidades[unidadNorm];
 
-            if (titularEncontrado) {
-                textoCargo = `📌 ${escapeHtml(titularEncontrado)}`;
-                claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
+            if (titularesEncontrados) {
+                if (titularesEncontrados.length === 1 || !window.isAdmin) {
+                    // Para el visitante o si solo hay 1 candidato: mostramos el primero
+                    textoCargo = `📌 ${escapeHtml(titularesEncontrados[0])}`;
+                    claseFondo = 'background-color: #eaf2f8; color: #2980b9; font-weight: 600; font-size: 11px;';
+                } 
+                else {
+                    // Solo para el Administrador cuando hay varios candidatos: Mostramos AMARILLO CLICKABLE
+                    textoCargo = `⚠️ Varios en fichero:<br>${escapeHtml(titularesEncontrados.join(' / '))} <br><span style="font-size:9px; opacity:0.7;">(Clic aquí para asignar)</span>`;
+                    claseFondo = 'background-color: #fcf3cf; color: #d35400; font-weight: 600; font-size: 11px; cursor: pointer; transition: transform 0.2s;';
+                    onclickAttr = `onclick="window.fijarTitularManual(${i})"`;
+                }
             } else {
                 textoCargo = `❌ No en fichero`;
                 claseFondo = 'background-color: #fdeded; color: #c0392b; font-size: 10px; font-weight: 500;';
             }
         }
         
-        // Se le añade la clase col-comparador para poder ocultarla en bloque
-        celdaComparadorHtml = `<td class="col-comparador" style="${claseFondo} white-space: normal; line-height: 1.2;">${textoCargo}</td>`;
+        celdaComparadorHtml = `<td class="col-comparador" style="${claseFondo} white-space: normal; line-height: 1.2;" ${onclickAttr}>${textoCargo}</td>`;
     }
 
     tr.innerHTML = `
@@ -440,6 +458,47 @@
     `;
     return tr;
   }
+
+  // =========================================================
+  // NUEVA FUNCIÓN: ASIGNAR TITULAR AL HACER CLIC EN EL AMARILLO
+  // =========================================================
+  window.fijarTitularManual = async function(idx) {
+      if (!window.isAdmin) return;
+      
+      const item = window.DATA[idx];
+      const unidadNorm = normalizarParaCruce(item[2]);
+      const candidatos = window.diccionarioUnidades[unidadNorm];
+      const sugerencia = candidatos ? candidatos[0] : '';
+
+      const mensaje = `⚠️ MÚLTIPLES CANDIDATOS DETECTADOS\n\nTu fichero sugiere estas opciones para esta unidad:\n- ${candidatos.join('\n- ')}\n\nEscribe el nombre definitivo para asignarlo y guardarlo en la nube:`;
+      const nuevoTitular = prompt(mensaje, sugerencia);
+
+      if (nuevoTitular !== null && nuevoTitular.trim() !== '') {
+          // Actualizamos local
+          window.DATA[idx][3] = nuevoTitular.trim();
+          window.DATA[idx][6] = 'manual';
+
+          // Mandamos a la Nube (merge:true respeta el slug de URL que ya tuviera)
+          if (db) {
+              try {
+                  document.getElementById('info-box').innerHTML = `⏳ Fijando titular en la nube...`;
+                  const docId = item[2].replace(/\//g, '-'); 
+                  const docRef = doc(db, "correcciones", docId);
+                  
+                  await setDoc(docRef, { titular: nuevoTitular.trim() }, { merge: true });
+
+                  document.getElementById('info-box').innerHTML = `☁️✅ <strong>¡Guardado!</strong> Titular asignado correctamente.`;
+                  document.getElementById('info-box').style.background = '#eafbf1';
+                  document.getElementById('info-box').style.borderColor = '#27ae60';
+              } catch(e) {
+                  alert("❌ Error al guardar en Firebase.\nDetalle: " + e.message);
+              }
+          }
+          init(); 
+          actualizarContadoresGlobales();
+      }
+  }
+
 
   window.editarURL = async function(idx) {
     if(!window.isAdmin) return; 
@@ -509,7 +568,6 @@
     const q = normalizarTexto(window.state.searchQuery);
     let countVisible = 0;
 
-    // LÓGICA DE OCULTACIÓN DINÁMICA DE LA COLUMNA DE COMPARACIÓN
     const table = document.getElementById('org-table');
     const ocultarColumna = !window.modoComparador || ['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
     
@@ -546,7 +604,7 @@
               if (titular && window.diccionarioTitulares[normalizarTexto(titular)]) {
                   textToSearch += " " + normalizarTexto(window.diccionarioTitulares[normalizarTexto(titular)]);
               } else if (window.diccionarioUnidades[normalizarParaCruce(name)]) {
-                  textToSearch += " " + normalizarTexto(window.diccionarioUnidades[normalizarParaCruce(name)]);
+                  textToSearch += " " + normalizarTexto(window.diccionarioUnidades[normalizarParaCruce(name)].join(" "));
               }
           }
           
@@ -583,7 +641,6 @@
     if (!window.DATA.length) { alert('Los datos aún no se han cargado.'); return; }
     const wb = XLSX.utils.book_new();
     
-    // Solo exportamos la columna si en la vista actual está activa y visible
     const tf = window.state.typeFilter;
     const exportarComparador = window.modoComparador && !['all', 'Consejería', 'Viceconsejería', 'Dirección General'].includes(tf);
 
@@ -608,7 +665,12 @@
           if (titular && window.diccionarioTitulares[titularNorm]) {
               fila.push('✅ ' + window.diccionarioTitulares[titularNorm]);
           } else if (window.diccionarioUnidades[unidadNorm]) {
-              fila.push('📌 ' + window.diccionarioUnidades[unidadNorm]);
+              const titularesEncontrados = window.diccionarioUnidades[unidadNorm];
+              if (titularesEncontrados.length === 1 || !window.isAdmin) {
+                  fila.push('📌 ' + titularesEncontrados[0]);
+              } else {
+                  fila.push('⚠️ Varios en fichero: ' + titularesEncontrados.join(' / '));
+              }
           } else {
               fila.push('❌ No en fichero');
           }
