@@ -88,7 +88,7 @@
 
 <div id="header">
   <div>
-    <div class="subtitle">Herramienta de Consulta </div>
+    <div class="subtitle">Herramienta de Consulta Oficial</div>
     <h1>🏛️ Estructura Organizativa CM</h1>
   </div>
   <div class="toolbar">
@@ -326,7 +326,18 @@
     try {
       const response = await fetch('data.json?v=' + new Date().getTime());
       if (!response.ok) throw new Error('Archivo data.json no encontrado');
-      window.DATA = await response.json(); // Ahora Python trae la consejería en el index [7] directamente!
+      let rawData = await response.json();
+
+      let cAct = "Presidencia de la Comunidad de Madrid";
+      rawData.forEach(item => {
+          const tipo = item[1];
+          const nombreUnidad = item[2];
+          if (tipo === 'Presidenta') cAct = "Presidencia de la Comunidad de Madrid";
+          else if (tipo === 'Consejería' || normalizarTexto(nombreUnidad).startsWith('consejeria')) cAct = nombreUnidad;
+          item[7] = cAct; 
+      });
+
+      window.DATA = rawData;
 
       if (db) {
           try {
@@ -335,7 +346,9 @@
             querySnapshot.forEach((doc) => { correccionesNube[doc.id] = doc.data(); });
 
             window.DATA.forEach(item => {
-              const docId = item[2].replace(/\//g, '-'); 
+              // EL FIX: Ahora la matrícula de Firebase es Consejería + Nombre Unidad
+              const docId = (item[7] + " - " + item[2]).replace(/\//g, '-'); 
+              
               if (correccionesNube[docId]) {
                   item[4] = correccionesNube[docId].slug;
                   item[5] = 'verified'; 
@@ -501,7 +514,8 @@
           if (db) {
               try {
                   document.getElementById('info-box').innerHTML = `⏳ Fijando titular en la nube...`;
-                  const docId = item[2].replace(/\//g, '-'); 
+                  // EL FIX: Guardamos con ID Consejería + Nombre
+                  const docId = (item[7] + " - " + item[2]).replace(/\//g, '-'); 
                   const docRef = doc(db, "correcciones", docId);
                   
                   await setDoc(docRef, { titular: nuevoTitular.trim() }, { merge: true });
@@ -553,7 +567,8 @@
           if (db) {
               try {
                   document.getElementById('info-box').innerHTML = `⏳ Guardando en la nube...`;
-                  const docId = item[2].replace(/\//g, '-'); 
+                  // EL FIX: Guardamos con ID Consejería + Nombre
+                  const docId = (item[7] + " - " + item[2]).replace(/\//g, '-'); 
                   const docRef = doc(db, "correcciones", docId);
                   
                   await setDoc(docRef, { slug: nuevoSlug, titular: finalTitular }, { merge: true });
