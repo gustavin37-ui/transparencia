@@ -88,7 +88,7 @@
 
 <div id="header">
   <div>
-    <div class="subtitle">Herramienta de Consulta Oficial</div>
+    <div class="subtitle">Herramienta de Consulta </div>
     <h1>🏛️ Estructura Organizativa CM</h1>
   </div>
   <div class="toolbar">
@@ -292,34 +292,22 @@
       event.target.value = '';
   }
 
-  // =========================================================
-  // LOGICA MEJORADA DE LOGIN / LOGOUT
-  // =========================================================
   window.toggleAdmin = async function() {
-    if (!auth) {
-        alert("❌ Opciones de Administrador desactivadas. Firebase no iniciado.");
-        return;
-    }
+    if (!auth) return;
 
     if (window.isAdmin) {
-      // PROCESO DE CERRAR SESIÓN DE FORMA SEGURA
       try {
           await signOut(auth);
-          // Forzamos el estado a Visitante inmediatamente
           window.isAdmin = false;
           document.getElementById('btn-admin').textContent = '🔒 Acceso Administración';
           document.getElementById('btn-admin').style.background = '#34495e';
           document.getElementById('info-box').style.display = 'none';
           document.getElementById('btn-export').style.display = 'none';
-          
-          // Repintamos la tabla para que desaparezcan los lápices/botones de edición
           if (window.DATA.length > 0) init(); 
       } catch (error) {
-          console.error("Error al cerrar sesión:", error);
           alert("Hubo un problema al cerrar sesión.");
       }
     } else {
-      // PROCESO DE INICIO DE SESIÓN
       const email = prompt("✉️ Email de administrador:");
       if (!email) return;
       const pwd = prompt("🔑 Contraseña:");
@@ -338,18 +326,7 @@
     try {
       const response = await fetch('data.json?v=' + new Date().getTime());
       if (!response.ok) throw new Error('Archivo data.json no encontrado');
-      let rawData = await response.json();
-
-      let cAct = "Presidencia de la Comunidad de Madrid";
-      rawData.forEach(item => {
-          const tipo = item[1];
-          const nombreUnidad = item[2];
-          if (tipo === 'Presidenta') cAct = "Presidencia de la Comunidad de Madrid";
-          else if (tipo === 'Consejería' || normalizarTexto(nombreUnidad).startsWith('consejeria')) cAct = nombreUnidad;
-          item[7] = cAct; 
-      });
-
-      window.DATA = rawData;
+      window.DATA = await response.json(); // Ahora Python trae la consejería en el index [7] directamente!
 
       if (db) {
           try {
